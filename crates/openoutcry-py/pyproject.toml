@@ -11,6 +11,9 @@ requires-python = ">=3.9"
 license = { text = "MIT OR Apache-2.0" }
 authors = [{ name = "General Liquidity, Inc." }]
 keywords = ["trading", "agent", "environment", "backtest", "reinforcement-learning", "gymnasium"]
+# PrimeIntellect Environments-Hub discoverability tags (read from [project].tags by the
+# `prime` CLI at push time; ignored by maturin's PEP 621 parser, so the wheel is unaffected).
+tags = ["train", "eval", "trading", "agent", "rl", "verifiers", "multi-turn", "leak-free"]
 classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
@@ -24,6 +27,12 @@ dependencies = [
 
 [project.optional-dependencies]
 verifiers = ["verifiers"]
+
+# Defaults for `vf-eval openoutcry` (read by verifiers' eval script from this table).
+# A bare `vf-eval openoutcry` then scores 16 scenarios x 3 rollouts of the v1 taskset.
+[tool.verifiers.eval]
+num_examples = 16
+rollouts_per_example = 3
 
 [tool.maturin]
 # Mixed Rust/Python layout: the pure-Python package lives under `python/openoutcry`,
