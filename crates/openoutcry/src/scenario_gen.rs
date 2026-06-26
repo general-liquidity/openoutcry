@@ -29,6 +29,17 @@ pub enum DistributionMode {
     Hard,
     /// The seeded panel with high volatility and frequent, larger jumps.
     Extreme,
+    /// Consecutive symbol pairs share a common-trend random walk, so `y - beta*x`
+    /// is a genuinely mean-reverting (stationary AR(1)) spread — a real
+    /// cointegrated structure for a market-neutral mandate to exploit. The plain
+    /// synthetic panel generates each symbol independently, so it has none.
+    #[serde(rename = "cointegrated_pairs")]
+    CointegratedPairs,
+    /// A momentum→reversion regime change: a trending segment (high drift,
+    /// persistent momentum) spliced to a mean-reverting/whipsaw segment, with the
+    /// changepoint location drawn from the seed.
+    #[serde(rename = "regime_shift")]
+    RegimeShift,
 }
 
 /// A reproducible scenario family: a seed interval `[start_level, start_level +
@@ -120,9 +131,100 @@ fn amplify(mut base: Dataset, seed: u64, p: AmplifyParams) -> Dataset {
     base
 }
 
+/// A strictly-positive price floor — the level analog of the `max(-0.95)` return
+/// floor, keeping every generated close above zero with mul/add/`max` only.
+const MIN_PRICE: f64 = 0.01;
+
+/// Draw a symmetric shock in `[-amp, amp)` from one `next_unit` draw (mul/add only).
+fn signed(rng: &mut SplitMix64, amp: f64) -> f64 {
+    (rng.next_unit() - 0.5) * 2.0 * amp
+}
+
+/// Overwrite the panel with **cointegrated pairs**. Consecutive symbols (sorted
+/// order) form a pair sharing a per-pair common-trend random walk `f_t` (an I(1)
+/// integrated level): `x_t = a_x*f_t + idio_x`, `y_t = a_y*f_t + idio_y + spread_t`,
+/// where `idio_*` are stationary white noise and `spread_t = phi*spread_{t-1} +
+/// noise` is a stationary AR(1) (`phi = 0.85`). With `beta = a_y/a_x` the common
+/// trend cancels in `y - beta*x`, leaving the stationary spread — so the pair is
+/// genuinely cointegrated. Pure mul/add/div/`max`; an odd trailing symbol gets a
+/// standalone positive random walk. Prices stay `>= MIN_PRICE`.
+#[allow(clippy::needless_range_loop)] // indices pair two distinct series at bar `t`
+fn cointegrated_pairs(mut base: Dataset, seed: u64) -> Dataset {
+    let mut rng = SplitMix64::new(seed ^ 0x436F_5061_6972_735F);
+    let mut series: Vec<&mut Vec<f64>> = base.closes.values_mut().collect();
+    let n = series.len();
+    let mut i = 0;
+    while i + 1 < n {
+        let len = series[i].len().min(series[i + 1].len());
+        let a_x = 0.8 + 0.4 * rng.next_unit();
+        let a_y = 0.8 + 0.4 * rng.next_unit();
+        let mut f = 100.0_f64;
+        let mut spread = 0.0_f64;
+        for t in 0..len {
+            if t > 0 {
+                f = (f + signed(&mut rng, 1.5)).max(MIN_PRICE);
+            }
+            let idio_x = signed(&mut rng, 0.6);
+            let idio_y = signed(&mut rng, 0.6);
+            spread = 0.85 * spread + signed(&mut rng, 1.0);
+            series[i][t] = (a_x * f + idio_x).max(MIN_PRICE);
+            series[i + 1][t] = (a_y * f + idio_y + spread).max(MIN_PRICE);
+        }
+        i += 2;
+    }
+    if i < n {
+        let len = series[i].len();
+        let mut f = 100.0_f64;
+        for t in 0..len {
+            if t > 0 {
+                f = (f + signed(&mut rng, 1.5)).max(MIN_PRICE);
+            }
+            series[i][t] = f;
+        }
+    }
+    base
+}
+
+/// Overwrite each symbol with a **momentum→reversion regime shift**: a trending
+/// segment `[0, cp)` (positive drift + persistent momentum AR(1) on returns) spliced
+/// to a whipsaw segment `[cp, len)` (negative return autocorrelation, no drift,
+/// higher per-bar volatility). The changepoint `cp` is drawn per symbol from the seed
+/// inside `[len/3, 2*len/3]`, so the first and last thirds are always in their
+/// respective regimes. Returns are compounded with the `max(-0.95)` floor (mul/add
+/// only — no `ln`/`exp`), keeping prices positive and cross-runtime identical.
+#[allow(clippy::needless_range_loop)] // `t` and `t-1` lookback drive the recurrence
+fn regime_shift(mut base: Dataset, seed: u64) -> Dataset {
+    let mut rng = SplitMix64::new(seed ^ 0x5265_676D_5368_6674);
+    for s in base.closes.values_mut() {
+        let len = s.len();
+        if len < 2 {
+            continue;
+        }
+        let lo = len / 3;
+        let span = ((2 * len) / 3 - lo).max(1);
+        let cp = lo + (rng.next_unit() * span as f64) as usize;
+        let mut price = 100.0_f64;
+        s[0] = price;
+        let mut prev_r = 0.0_f64;
+        for t in 1..len {
+            let r = if t < cp {
+                0.004 + 0.7 * prev_r + signed(&mut rng, 0.01)
+            } else {
+                -0.6 * prev_r + signed(&mut rng, 0.03)
+            };
+            let r = r.max(-0.95);
+            price *= 1.0 + r;
+            s[t] = price;
+            prev_r = r;
+        }
+    }
+    base
+}
+
 /// Generate the [`Dataset`] for `spec` under `seed`. Deterministic: identical
 /// `(spec, seed)` ⇒ identical `Dataset`. `n_symbols` / `n_days` are honored by every
-/// tier; `Hard` / `Extreme` amplify the same seeded panel (see [`amplify`]).
+/// tier; `Hard` / `Extreme` amplify the same seeded panel (see [`amplify`]), while
+/// `CointegratedPairs` / `RegimeShift` overwrite it with a bespoke structured panel.
 pub fn generate_scenario(spec: &ScenarioSpec, seed: u64) -> Dataset {
     let base = Dataset::synthetic(spec.n_symbols, spec.n_days, seed);
     match spec.distribution_mode {
@@ -147,6 +249,8 @@ pub fn generate_scenario(spec: &ScenarioSpec, seed: u64) -> Dataset {
                 jump_size: 0.13,
             },
         ),
+        DistributionMode::CointegratedPairs => cointegrated_pairs(base, seed),
+        DistributionMode::RegimeShift => regime_shift(base, seed),
     }
 }
 
@@ -211,6 +315,8 @@ mod tests {
     const GOLDEN_CALM_4X120_SEED7_FNV1A: u64 = 0xb7cf_976c_7121_9c52;
     const GOLDEN_HARD_4X120_SEED7_FNV1A: u64 = 0x2ef5_aff1_a716_05e6;
     const GOLDEN_EXTREME_4X120_SEED7_FNV1A: u64 = 0xb082_0c4d_2c73_7f88;
+    const GOLDEN_COINTEGRATED_4X120_SEED7_FNV1A: u64 = 0xa3d2_2742_4ef0_5868;
+    const GOLDEN_REGIME_4X120_SEED7_FNV1A: u64 = 0x8b82_2cf3_c9d3_038f;
 
     /// Mean per-symbol stdev of simple returns — a realized-volatility proxy.
     fn realized_vol(d: &Dataset) -> f64 {
@@ -340,6 +446,167 @@ mod tests {
         let ej = serde_json::to_string(&generate_scenario(&extreme, 7)).unwrap();
         assert_eq!(fnv1a(hj.as_bytes()), GOLDEN_HARD_4X120_SEED7_FNV1A);
         assert_eq!(fnv1a(ej.as_bytes()), GOLDEN_EXTREME_4X120_SEED7_FNV1A);
+    }
+
+    fn coint_spec() -> ScenarioSpec {
+        ScenarioSpec {
+            distribution_mode: DistributionMode::CointegratedPairs,
+            ..golden_spec()
+        }
+    }
+
+    fn regime_spec() -> ScenarioSpec {
+        ScenarioSpec {
+            distribution_mode: DistributionMode::RegimeShift,
+            ..golden_spec()
+        }
+    }
+
+    #[test]
+    fn structured_modes_serialize_snake_case() {
+        assert_eq!(
+            serde_json::to_string(&DistributionMode::CointegratedPairs).unwrap(),
+            "\"cointegrated_pairs\""
+        );
+        assert_eq!(
+            serde_json::to_string(&DistributionMode::RegimeShift).unwrap(),
+            "\"regime_shift\""
+        );
+    }
+
+    #[test]
+    fn structured_modes_are_deterministic() {
+        for spec in [coint_spec(), regime_spec()] {
+            let a = serde_json::to_string(&generate_scenario(&spec, 7)).unwrap();
+            let b = serde_json::to_string(&generate_scenario(&spec, 7)).unwrap();
+            assert_eq!(a, b);
+        }
+    }
+
+    #[test]
+    fn structured_modes_diverge_from_calm() {
+        let cj = serde_json::to_string(&generate_scenario(&golden_spec(), 7)).unwrap();
+        let pj = serde_json::to_string(&generate_scenario(&coint_spec(), 7)).unwrap();
+        let rj = serde_json::to_string(&generate_scenario(&regime_spec(), 7)).unwrap();
+        assert_ne!(cj, pj);
+        assert_ne!(cj, rj);
+        assert_ne!(pj, rj);
+    }
+
+    #[test]
+    fn golden_hash_structured_modes_stable() {
+        let pj = serde_json::to_string(&generate_scenario(&coint_spec(), 7)).unwrap();
+        let rj = serde_json::to_string(&generate_scenario(&regime_spec(), 7)).unwrap();
+        assert_eq!(fnv1a(pj.as_bytes()), GOLDEN_COINTEGRATED_4X120_SEED7_FNV1A);
+        assert_eq!(fnv1a(rj.as_bytes()), GOLDEN_REGIME_4X120_SEED7_FNV1A);
+    }
+
+    /// Ordinary-least-squares slope of `y` on `x` (with intercept), mul/add/div only.
+    fn ols_beta(x: &[f64], y: &[f64]) -> f64 {
+        let n = x.len() as f64;
+        let mx = x.iter().sum::<f64>() / n;
+        let my = y.iter().sum::<f64>() / n;
+        let mut cov = 0.0;
+        let mut var = 0.0;
+        for (xi, yi) in x.iter().zip(y) {
+            cov += (xi - mx) * (yi - my);
+            var += (xi - mx) * (xi - mx);
+        }
+        cov / var
+    }
+
+    /// Lo–MacKinlay variance ratio at horizon `q`: `Var(s_t - s_{t-q}) / (q *
+    /// Var(s_t - s_{t-1}))`. `< 1` ⇒ mean-reverting, `≈ 1` ⇒ random walk, `> 1` ⇒
+    /// trending. Pure mul/add/div.
+    fn variance_ratio(s: &[f64], q: usize) -> f64 {
+        let diff_var = |k: usize| {
+            let d: Vec<f64> = (k..s.len()).map(|t| s[t] - s[t - k]).collect();
+            let m = d.iter().sum::<f64>() / d.len() as f64;
+            d.iter().map(|v| (v - m) * (v - m)).sum::<f64>() / d.len() as f64
+        };
+        diff_var(q) / (q as f64 * diff_var(1))
+    }
+
+    #[test]
+    fn cointegrated_spread_is_mean_reverting() {
+        let d = generate_scenario(&coint_spec(), 7);
+        let cols: Vec<&Vec<f64>> = d.closes.values().collect();
+        // 4 symbols → 2 pairs; every pair's residual spread is bounded (VR < 1),
+        // whereas each leg alone is an integrated random walk (VR ≈ 1, not < 1).
+        let mut pairs = 0;
+        let mut i = 0;
+        while i + 1 < cols.len() {
+            let x = cols[i];
+            let y = cols[i + 1];
+            let beta = ols_beta(x, y);
+            let spread: Vec<f64> = x.iter().zip(y).map(|(xi, yi)| yi - beta * xi).collect();
+            let vr = variance_ratio(&spread, 8);
+            assert!(
+                vr < 1.0,
+                "pair {i} spread VR {vr} should be < 1 (mean-reverting)"
+            );
+            let leg_vr = variance_ratio(x, 8);
+            assert!(
+                leg_vr > vr,
+                "integrated leg VR {leg_vr} should exceed spread VR {vr}"
+            );
+            pairs += 1;
+            i += 2;
+        }
+        assert_eq!(pairs, 2);
+    }
+
+    #[test]
+    fn regime_shift_halves_differ() {
+        let d = generate_scenario(&regime_spec(), 7);
+        // First third is always trending, last third always whipsaw (cp ∈
+        // [len/3, 2*len/3]). Compare realized drift + vol over those two windows.
+        let seg_stats = |series: &[f64], a: usize, b: usize| {
+            let rets: Vec<f64> = (a + 1..b)
+                .map(|t| series[t] / series[t - 1] - 1.0)
+                .collect();
+            let mean = rets.iter().sum::<f64>() / rets.len() as f64;
+            let var = rets.iter().map(|r| (r - mean) * (r - mean)).sum::<f64>() / rets.len() as f64;
+            (mean, var.sqrt())
+        };
+        let mut trend_drift = 0.0;
+        let mut whip_drift = 0.0;
+        let mut trend_vol = 0.0;
+        let mut whip_vol = 0.0;
+        let n = d.closes.len() as f64;
+        for series in d.closes.values() {
+            let len = series.len();
+            let (td, tv) = seg_stats(series, 0, len / 3);
+            let (wd, wv) = seg_stats(series, (2 * len) / 3, len);
+            trend_drift += td;
+            whip_drift += wd;
+            trend_vol += tv;
+            whip_vol += wv;
+        }
+        trend_drift /= n;
+        whip_drift /= n;
+        trend_vol /= n;
+        whip_vol /= n;
+        assert!(
+            trend_drift > whip_drift,
+            "trending drift {trend_drift} should exceed whipsaw drift {whip_drift}"
+        );
+        assert!(
+            whip_vol > trend_vol,
+            "whipsaw vol {whip_vol} should exceed trending vol {trend_vol}"
+        );
+    }
+
+    #[test]
+    fn structured_mode_prices_are_positive_and_finite() {
+        for spec in [coint_spec(), regime_spec()] {
+            let d = generate_scenario(&spec, 3);
+            for series in d.closes.values() {
+                for &p in series {
+                    assert!(p.is_finite() && p > 0.0, "price {p} must be finite and > 0");
+                }
+            }
+        }
     }
 
     #[test]

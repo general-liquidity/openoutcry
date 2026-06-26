@@ -22,8 +22,11 @@ fn parse_distribution_mode(mode: &str) -> PyResult<DistributionMode> {
         "calm" => Ok(DistributionMode::Calm),
         "hard" => Ok(DistributionMode::Hard),
         "extreme" => Ok(DistributionMode::Extreme),
+        "cointegrated_pairs" => Ok(DistributionMode::CointegratedPairs),
+        "regime_shift" => Ok(DistributionMode::RegimeShift),
         other => Err(PyValueError::new_err(format!(
-            "unknown distribution_mode {other:?} (expected calm | hard | extreme)"
+            "unknown distribution_mode {other:?} (expected calm | hard | extreme | \
+             cointegrated_pairs | regime_shift)"
         ))),
     }
 }
