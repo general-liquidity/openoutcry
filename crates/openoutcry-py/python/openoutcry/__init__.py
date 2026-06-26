@@ -66,6 +66,32 @@ from .news import SyntheticNewsObservation, news_series
 from .discrete import DiscreteAction
 from .pairs import SpreadObservation
 from .regime_eval import evaluate_per_regime, radar_score
+from .portfolio_env import PortfolioEnv
+from .market_making import (
+    MarketMakingEnv,
+    MMParams,
+    analytically_optimal_policy,
+    fixed_spread_policy,
+    mm_regret,
+)
+from .execution import ExecutionEnv, execution_quality, twap_policy, immediate_policy
+from .forecast import (
+    calibrated_forecast,
+    ForecastChannelObservation,
+    forecast_skill_curve,
+)
+from .obs_extra import (
+    MultiTimescaleMomentum,
+    RollingCovarianceObservation,
+    TimeToHorizonObservation,
+    CounterfactualInfo,
+)
+from .data_blocks import (
+    find_continuous_blocks,
+    block_windows,
+    sample_block_window,
+    make_block_env,
+)
 from .minari_export import to_minari, to_minari_train_test
 from .pettingzoo_env import MultiAgentOpenOutcryEnv, make_aec_env
 from .market_env import EndogenousMarketEnv
@@ -180,6 +206,27 @@ __all__ = [
     "KellyVolTargetPolicy",
     "evaluate_per_regime",
     "radar_score",
+    "PortfolioEnv",
+    "MarketMakingEnv",
+    "MMParams",
+    "analytically_optimal_policy",
+    "fixed_spread_policy",
+    "mm_regret",
+    "ExecutionEnv",
+    "execution_quality",
+    "twap_policy",
+    "immediate_policy",
+    "calibrated_forecast",
+    "ForecastChannelObservation",
+    "forecast_skill_curve",
+    "MultiTimescaleMomentum",
+    "RollingCovarianceObservation",
+    "TimeToHorizonObservation",
+    "CounterfactualInfo",
+    "find_continuous_blocks",
+    "block_windows",
+    "sample_block_window",
+    "make_block_env",
     "register_envs",
 ]
 __version__ = "0.3.0"
