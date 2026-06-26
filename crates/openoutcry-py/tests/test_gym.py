@@ -102,6 +102,28 @@ def test_determinism_same_seed_identical_rewards():
     assert a != c
 
 
+def test_reset_seed_selects_scenario():
+    """``reset(seed=k)`` rebuilds a synthetic env on the new seed, so one env can be
+    re-pointed at distinct, reproducible scenarios via the gymnasium seed arg."""
+    env = OpenOutcryEnv(n_symbols=3, n_days=60, seed=0)
+    action = _equal_weight_action(env)
+
+    def rollout(seed: int) -> list[float]:
+        env.reset(seed=seed)
+        out = []
+        done = False
+        while not done:
+            _obs, reward, terminated, truncated, _info = env.step(action)
+            out.append(reward)
+            done = terminated or truncated
+        return out
+
+    assert rollout(7) == rollout(7), "reset(seed) must be reproducible"
+    assert rollout(7) != rollout(8), "distinct reset seeds must give distinct scenarios"
+    _obs, info = env.reset(seed=99)
+    assert info["scenario_seed"] == 99
+
+
 def test_from_csv_classmethod():
     csv = (
         "date,symbol,close\n"
