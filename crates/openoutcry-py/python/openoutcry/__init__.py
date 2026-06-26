@@ -92,6 +92,13 @@ from .data_blocks import (
     sample_block_window,
     make_block_env,
 )
+from .cascade import LiquidationCascadeEnv, cascade_survived, cascade_summary
+from .reward_misspecification import (
+    MISSPECIFIED_REWARDS,
+    MISSPECIFIED_PROXY_POLICIES,
+    misspecification_gap,
+    demonstrate_punishment,
+)
 from .minari_export import to_minari, to_minari_train_test
 from .pettingzoo_env import MultiAgentOpenOutcryEnv, make_aec_env
 from .market_env import EndogenousMarketEnv
@@ -227,6 +234,13 @@ __all__ = [
     "block_windows",
     "sample_block_window",
     "make_block_env",
+    "LiquidationCascadeEnv",
+    "cascade_survived",
+    "cascade_summary",
+    "MISSPECIFIED_REWARDS",
+    "MISSPECIFIED_PROXY_POLICIES",
+    "misspecification_gap",
+    "demonstrate_punishment",
     "register_envs",
 ]
 __version__ = "0.4.0"
