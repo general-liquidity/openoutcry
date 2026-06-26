@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "openoutcry"
-version = "0.1.0"
+version = "0.2.0"
 description = "OpenOutcry — a leak-free, point-in-time Gym for trading agents (Python distribution)."
 readme = "README.md"
 requires-python = ">=3.9"

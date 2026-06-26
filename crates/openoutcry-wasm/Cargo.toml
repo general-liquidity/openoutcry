@@ -7,7 +7,7 @@ description = "WASM bindings for the OpenOutcry trading-agent environment (run b
 repository.workspace = true
 
 [dependencies]
-openoutcry = { path = "../openoutcry", version = "0.1.0" }
+openoutcry = { path = "../openoutcry", version = "0.2.0" }
 serde = { version = "1", features = ["derive"] }
 # `float_roundtrip` makes JSON float *parsing* bit-exact, so a Dataset/trajectory
 # round-tripped through the boundary recomputes to a byte-identical Run — the

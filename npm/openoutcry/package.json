@@ -1,6 +1,6 @@
 {
   "name": "@general-liquidity/openoutcry",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "The leak-free, point-in-time trading-agent environment — a Gym for trading agents. Run reference baselines and recompute-to-verify any trajectory through the identical Rust engine as the SharpeBench harness, compiled to WASM.",
   "keywords": [
     "trading",
