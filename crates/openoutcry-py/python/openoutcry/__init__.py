@@ -43,7 +43,29 @@ from .mandate import (
     validate_mandate,
 )
 from .verifiers_env import mandate_reward
-from .baselines import run_baselines, leaderboard_markdown
+from .baselines import (
+    run_baselines,
+    leaderboard_markdown,
+    MinVariancePolicy,
+    MaxSharpePolicy,
+    KellyVolTargetPolicy,
+)
+from .rewards import (
+    REWARD_SCHEMES,
+    list_reward_schemes,
+    build_scheme_rubric,
+    differential_sharpe,
+    sortino,
+    drawdown_penalized,
+    turnover_penalized,
+    loss_averse,
+)
+from .indicators import CausalIndicatorObservation, INDICATORS, DEFAULT_INDICATORS
+from .risk import DrawdownStopper, TurbulenceHalt
+from .news import SyntheticNewsObservation, news_series
+from .discrete import DiscreteAction
+from .pairs import SpreadObservation
+from .regime_eval import evaluate_per_regime, radar_score
 from .minari_export import to_minari, to_minari_train_test
 from .pettingzoo_env import MultiAgentOpenOutcryEnv, make_aec_env
 from .market_env import EndogenousMarketEnv
@@ -136,6 +158,28 @@ __all__ = [
     "evaluate_eval_set",
     "assert_no_regression",
     "EVAL_SET_VERSION",
+    "REWARD_SCHEMES",
+    "list_reward_schemes",
+    "build_scheme_rubric",
+    "differential_sharpe",
+    "sortino",
+    "drawdown_penalized",
+    "turnover_penalized",
+    "loss_averse",
+    "CausalIndicatorObservation",
+    "INDICATORS",
+    "DEFAULT_INDICATORS",
+    "DrawdownStopper",
+    "TurbulenceHalt",
+    "SyntheticNewsObservation",
+    "news_series",
+    "DiscreteAction",
+    "SpreadObservation",
+    "MinVariancePolicy",
+    "MaxSharpePolicy",
+    "KellyVolTargetPolicy",
+    "evaluate_per_regime",
+    "radar_score",
     "register_envs",
 ]
 __version__ = "0.2.0"
