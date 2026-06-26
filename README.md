@@ -36,7 +36,7 @@ The strategic bet is **interface ownership**: if every trading agent in the open
 
 ## Status: published, active (pre-1.0)
 
-Published to **crates.io**, **npm**, and **PyPI** at **v0.5.0**, depending on the **published** `sharpebench-sim 0.0.7` engine (not a vendored copy). CI is green across four surfaces: Rust (`fmt`, `clippy -D warnings`, tests, a WASM target build), `cargo-deny`, the npm package, and the Python wheel (`maturin` + `pytest`).
+Published to **crates.io**, **npm**, and **PyPI** at **v0.6.0**, depending on the **published** `sharpebench-sim 0.0.8` engine (not a vendored copy). CI is green across four surfaces: Rust (`fmt`, `clippy -D warnings`, tests, a WASM target build), `cargo-deny`, the npm package, and the Python wheel (`maturin` + `pytest`).
 
 Beyond the core `reset`/`step` lifecycle, the environment now ships a full **reinforcement-learning training surface**:
 
@@ -53,9 +53,9 @@ Beyond the core `reset`/`step` lifecycle, the environment now ships a full **rei
 | **Vectorized rollouts** | `VecTradingEnv` runs B scenario lanes in lockstep (rayon, structure-of-arrays JSON, current-Gymnasium `AutoresetMode`, async `send`/`recv`), exposed as a `gymnasium.vector` env. |
 | **Point-in-time-safe wrappers** | Causal normalize (no future-bar leak), `TimeLimit`, `FrameStack`, `RecordEpisodeStatistics`, vector-env variants, and `flatten`/`unflatten` Dict-obs helpers, plus a `check_env` conformance harness that *proves* seed-determinism (and adopts Gymnasium's own `check_env`). |
 | **Gymnasium registration** | Versioned, namespaced IDs: `gymnasium.make("OpenOutcry/Hard-v1")` and `make_vec(...)` route to the scalar and vector envs, with `-Eval-v1` variants on a disjoint held-out seed band. |
-| **Multi-agent markets** | A PettingZoo `MultiAgentOpenOutcryEnv` (batched competition: N agents on one frozen scenario, SharpeBench-ranked), and `EndogenousMarketEnv`, a real shared-book market where aggregate flow *moves* the cleared price (Kyle permanent + Almgren-Chriss temporary impact). |
+| **Multi-agent markets** | A PettingZoo `MultiAgentOpenOutcryEnv` (batched competition: N agents on one frozen scenario, SharpeBench-ranked), an `EndogenousMarketEnv` (a shared-book market where aggregate flow *moves* the cleared price via Kyle + Almgren-Chriss impact), and an `LOBMarketEnv` over a real **deterministic limit-order-book matching engine** (integer ticks, price-time priority, market/limit/cancel/modify, depth-ladder + microprice + queue-imbalance obs). |
 | **Per-scenario mandates** | Each scenario samples a trading mandate (long-only, market-neutral, drawdown-capped, beat-a-benchmark); the `verifiers` rubric is mandate-conditioned, so wrong-objective behavior is penalized, not just unrewarded. |
-| **Offline-RL + checkpointing** | `to_minari` exports rollouts as a Farama [Minari](https://minari.farama.org) dataset (leak-safe, `recover_environment`-ready); `CheckpointableEnv` clones/restores/branches market state for tree search; `OpenOutcryFuncEnv` is a stateless `gymnasium.functional.FuncEnv` view. |
+| **Offline-RL + checkpointing** | `to_minari` exports rollouts as a Farama [Minari](https://minari.farama.org) dataset (leak-safe, `recover_environment`-ready); `CheckpointableEnv` clones/restores/branches market state for tree search (O(1) native engine snapshot or replay-from-decisions); `OpenOutcryFuncEnv` is a stateless `gymnasium.functional.FuncEnv` view. |
 | **Benchmark protocol** | A committed [`EVALUATION.md`](EVALUATION.md): the canonical eval contract, the disjoint train/held-out split, and a baseline leaderboard (deflated Sharpe to beat is 0.0; pass^k degrades Calm to Hard to Extreme). |
 | **Harness integration** | An MCP server (`reset` / `step` / `spec` tools) so any MCP agent harness drives an episode with zero glue, a `LookaheadGuard` that refuses agent operations reading future data, versioned JSONL rollout traces that re-score offline through the SharpeBench kernel, and a cost-adjusted `RunMetrics` block for leaderboard ranking. |
 
@@ -205,7 +205,7 @@ The load-bearing standard. An `Observation` is point-in-time; a `Decision` is a 
 A Rust [Cargo workspace](Cargo.toml), `#![forbid(unsafe_code)]`, that **depends on** the published SharpeBench engine rather than vendoring it, so the env and the benchmark cannot drift.
 
 ```
-sharpebench-sim (published 0.0.7) ... the leak-free point-in-time engine
+sharpebench-sim (published 0.0.8) ... the leak-free point-in-time engine
         |
    crates/openoutcry ......... the env, scenario generator, batched VecTradingEnv,
         |                       mandate / exec-noise / market-clearing cores, the
