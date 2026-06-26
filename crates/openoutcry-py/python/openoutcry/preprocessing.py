@@ -35,6 +35,7 @@ from .wrappers import (
 )
 from .execution_noise import ExecutionNoiseWrapper
 from .spaces import FlattenObservation
+from .indicators import CausalIndicatorObservation, INDICATORS
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,11 @@ class PreprocessingConfig:
     reward_clip: Optional[float] = None
     # Episode-length cap (truncation). Default None = use the env's own window length.
     max_episode_steps: Optional[int] = None
+    # Named causal technical-indicator block (the freqtrade declarative-list pattern).
+    # Default empty = no indicators (near-raw obs). Each name adds one scalar per symbol
+    # under obs["indicators"], computed from a leak-free rolling close buffer. Adding
+    # features changes what the policy sees, so it must be disclosed with any score.
+    indicators: tuple[str, ...] = ()
     # Flatten the Dict obs into a single Box. Default False: the Dict obs is the package
     # default (named fields), flattening is an MLP-convenience opt-in.
     flatten: bool = False
@@ -96,6 +102,9 @@ class PreprocessingConfig:
             raise ValueError("reward_clip must be > 0 when set")
         if self.max_episode_steps is not None and self.max_episode_steps < 1:
             raise ValueError("max_episode_steps must be >= 1 when set")
+        unknown = [name for name in self.indicators if name not in INDICATORS]
+        if unknown:
+            raise ValueError(f"unknown indicators: {unknown}")
 
 
 # The OpenOutcry standard input pipeline. Freeze this; report deviations from it.
@@ -130,14 +139,16 @@ def make_preprocessed_env(
     2. ``TimeLimit`` — truncate first, so every later layer sees the capped horizon.
     3. ``ExecutionNoiseWrapper`` — perturb the *realized* action before it reaches the
        env, but after the episode boundary is fixed.
-    4. ``FrameStack`` — assemble temporal context from raw obs (before normalization, so
+    4. ``CausalIndicatorObservation`` — append the named indicator block from a leak-free
+       rolling close buffer, before frame-stacking so each frame carries indicators.
+    5. ``FrameStack`` — assemble temporal context from raw obs (before normalization, so
        each stacked frame is normalized consistently downstream).
-    5. ``CausalNormalizeObservation`` — z-score features using past bars only.
-    6. ``CausalNormalizeReward`` / reward clip — reward transforms last among the
+    6. ``CausalNormalizeObservation`` — z-score features using past bars only.
+    7. ``CausalNormalizeReward`` / reward clip — reward transforms last among the
        reward-touching layers; normalize-then-clip if both are set.
-    7. ``RecordEpisodeStatistics`` — observe the *final* reward (post clip/normalize) so
+    8. ``RecordEpisodeStatistics`` — observe the *final* reward (post clip/normalize) so
        ``info["episode"]`` reflects what the agent actually optimized.
-    8. ``FlattenObservation`` — optional outermost view; flattens whatever obs shape the
+    9. ``FlattenObservation`` — optional outermost view; flattens whatever obs shape the
        inner stack produced (stacked + normalized Dict -> flat Box).
     """
     cfg = config if config is not None else CANONICAL_PREPROCESSING
@@ -153,6 +164,9 @@ def make_preprocessed_env(
             slippage_bps=cfg.execution_noise.slippage_bps,
             seed=cfg.execution_noise.seed,
         )
+
+    if cfg.indicators:
+        env = CausalIndicatorObservation(env, indicators=cfg.indicators)
 
     if cfg.lookback > 1:
         env = FrameStack(env, cfg.lookback)
@@ -185,6 +199,7 @@ def describe_preprocessing(config: Optional[PreprocessingConfig] = None) -> str:
     lines = [
         "OpenOutcry preprocessing config",
         f"  lookback (frame-stack)      = {cfg.lookback}",
+        f"  indicators                  = {list(cfg.indicators)}  [DISCLOSE]",
         f"  causal_normalize_obs        = {cfg.causal_normalize_obs}",
         f"  causal_normalize_reward     = {cfg.causal_normalize_reward}  [DISCLOSE]",
         f"  reward_clip                 = {cfg.reward_clip}  [DISCLOSE]",
