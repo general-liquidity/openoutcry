@@ -93,6 +93,7 @@ from .data_blocks import (
     make_block_env,
 )
 from .cascade import LiquidationCascadeEnv, cascade_survived, cascade_summary
+from .lob_env import LOBMarketEnv, symmetric_quote_policy, noise_trader_policy
 from .reward_misspecification import (
     MISSPECIFIED_REWARDS,
     MISSPECIFIED_PROXY_POLICIES,
@@ -237,6 +238,9 @@ __all__ = [
     "LiquidationCascadeEnv",
     "cascade_survived",
     "cascade_summary",
+    "LOBMarketEnv",
+    "symmetric_quote_policy",
+    "noise_trader_policy",
     "MISSPECIFIED_REWARDS",
     "MISSPECIFIED_PROXY_POLICIES",
     "misspecification_gap",

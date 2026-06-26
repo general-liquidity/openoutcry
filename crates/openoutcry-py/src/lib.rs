@@ -4,6 +4,7 @@
 //! and identical to the language-agnostic protocol any external agent speaks.
 
 use openoutcry::exec_noise::{perturb as core_perturb_action, ExecNoise};
+use openoutcry::lob_market::{OrderBook, OrderKind, Side};
 use openoutcry::market::{MarketClearing, MarketParams};
 use openoutcry::vec_env::AutoresetMode;
 use openoutcry::{
@@ -627,12 +628,106 @@ impl PyMarketClearing {
     }
 }
 
+fn parse_side(s: &str) -> PyResult<Side> {
+    match s {
+        "buy" => Ok(Side::Buy),
+        "sell" => Ok(Side::Sell),
+        other => Err(PyValueError::new_err(format!(
+            "unknown side {other:?} (expected buy | sell)"
+        ))),
+    }
+}
+
+/// Parse one flat order JSON object into an `(agent, OrderKind)` tuple. Shape:
+/// `{agent, kind: "limit"|"market"|"cancel"|"modify", side?, price_tick?, qty?, id?, new_qty?}`.
+fn parse_order(v: &serde_json::Value) -> PyResult<(usize, OrderKind)> {
+    let bad = |m: &str| PyValueError::new_err(format!("invalid order: {m}"));
+    let agent = v["agent"].as_u64().ok_or_else(|| bad("agent"))? as usize;
+    let kind = v["kind"].as_str().ok_or_else(|| bad("kind"))?;
+    let order = match kind {
+        "limit" => OrderKind::Limit {
+            side: parse_side(v["side"].as_str().ok_or_else(|| bad("side"))?)?,
+            price_tick: v["price_tick"].as_i64().ok_or_else(|| bad("price_tick"))?,
+            qty: v["qty"].as_u64().ok_or_else(|| bad("qty"))?,
+        },
+        "market" => OrderKind::Market {
+            side: parse_side(v["side"].as_str().ok_or_else(|| bad("side"))?)?,
+            qty: v["qty"].as_u64().ok_or_else(|| bad("qty"))?,
+        },
+        "cancel" => OrderKind::Cancel {
+            id: v["id"].as_u64().ok_or_else(|| bad("id"))?,
+        },
+        "modify" => OrderKind::Modify {
+            id: v["id"].as_u64().ok_or_else(|| bad("id"))?,
+            new_qty: v["new_qty"].as_u64().ok_or_else(|| bad("new_qty"))?,
+        },
+        other => return Err(bad(&format!("unknown kind {other:?}"))),
+    };
+    Ok((agent, order))
+}
+
+fn ladder_json(book: &OrderBook, levels: usize) -> serde_json::Value {
+    serde_json::to_value(book.depth_ladder(levels)).unwrap_or(serde_json::Value::Null)
+}
+
+/// A deterministic integer-tick **limit-order-book** matching engine (M3): price-time
+/// priority, market/limit/cancel/modify, partial fills, and a depth-ladder observation
+/// (`mid` / `microprice` / `queue_imbalance`). JSON at the boundary so the tape is
+/// byte-identical across runtimes. `step_book` applies a batch of agent orders in
+/// canonical order and returns the resulting fills + post-step ladder.
+#[pyclass(name = "PyOrderBook")]
+pub struct PyOrderBook {
+    inner: OrderBook,
+    levels: usize,
+}
+
+#[pymethods]
+impl PyOrderBook {
+    #[new]
+    #[pyo3(signature = (tick_size = 0.01, levels = 10))]
+    fn new(tick_size: f64, levels: usize) -> Self {
+        PyOrderBook {
+            inner: OrderBook::new(tick_size),
+            levels,
+        }
+    }
+
+    /// Clear the book and return the (empty) depth-ladder snapshot as JSON.
+    fn reset_book(&mut self) -> String {
+        self.inner = OrderBook::new(self.inner.tick_size());
+        serde_json::json!({ "ladder": ladder_json(&self.inner, self.levels) }).to_string()
+    }
+
+    /// Apply a JSON array of flat agent orders (canonical order, price-time priority) and
+    /// return `{ "fills": [Fill, ...], "ladder": LadderSnapshot }` as JSON.
+    fn step_book(&mut self, orders_json: &str) -> PyResult<String> {
+        let arr: Vec<serde_json::Value> = serde_json::from_str(orders_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid orders JSON: {e}")))?;
+        let orders: Vec<(usize, OrderKind)> = arr
+            .iter()
+            .map(parse_order)
+            .collect::<PyResult<Vec<_>>>()?;
+        let fills = self.inner.step(&orders);
+        let out = serde_json::json!({
+            "fills": serde_json::to_value(&fills).map_err(|e| PyValueError::new_err(e.to_string()))?,
+            "ladder": ladder_json(&self.inner, self.levels),
+        });
+        Ok(out.to_string())
+    }
+
+    /// The current depth-ladder snapshot as JSON (without stepping).
+    fn ladder(&self) -> String {
+        ladder_json(&self.inner, self.levels).to_string()
+    }
+}
+
 /// The `openoutcry_py` native module (imported as `openoutcry.openoutcry_py`).
 #[pymodule]
 fn openoutcry_py(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyTradingEnv>()?;
     m.add_class::<PyVecTradingEnv>()?;
     m.add_class::<PyMarketClearing>()?;
+    m.add_class::<PyOrderBook>()?;
     m.add_function(wrap_pyfunction!(score_run, m)?)?;
     m.add_function(wrap_pyfunction!(validate_decision_json, m)?)?;
     m.add_function(wrap_pyfunction!(sample_mandate_json, m)?)?;
