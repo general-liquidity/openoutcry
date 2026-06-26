@@ -100,7 +100,6 @@ jobs:
           command: build
           args: --release --out dist --interpreter 3.10 3.11 3.12 3.13 --manifest-path crates/openoutcry-py/Cargo.toml
           manylinux: auto
-          sccache: true
       - name: Build sdist
         uses: PyO3/maturin-action@v1
         with:
