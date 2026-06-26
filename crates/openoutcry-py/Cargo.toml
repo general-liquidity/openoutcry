@@ -3,7 +3,7 @@
 # Concrete fields (no `.workspace` inheritance) since it sits outside the workspace.
 [package]
 name = "openoutcry-py"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Python bindings (pyo3) for OpenOutcry — the leak-free trading-agent environment."
@@ -14,7 +14,7 @@ name = "openoutcry_py"
 crate-type = ["cdylib"]
 
 [dependencies]
-openoutcry = { path = "../openoutcry", version = "0.3.0" }
+openoutcry = { path = "../openoutcry", version = "0.4.0" }
 sharpebench-core = "0.0.7"
 serde_json = "1"
 

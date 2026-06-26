@@ -229,4 +229,4 @@ __all__ = [
     "make_block_env",
     "register_envs",
 ]
-__version__ = "0.3.0"
+__version__ = "0.4.0"
