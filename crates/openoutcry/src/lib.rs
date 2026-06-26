@@ -32,6 +32,11 @@ pub use scenario_gen::{
     generate_scenario, level_seed, train_test_split, DistributionMode, ScenarioSpec,
 };
 
+// --- Vectorized, batched environment (gym3's "vectorized-first" design) -------------------
+
+pub mod vec_env;
+pub use vec_env::{BatchStep, LaneConfig, VecTradingEnv};
+
 // --- Point-in-time simulator surface (extraction from `sharpebench-sim`) ------------------
 
 pub use sharpebench_sim::{

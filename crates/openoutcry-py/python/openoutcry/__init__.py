@@ -10,8 +10,9 @@ The native binding exchanges the language-agnostic wire JSON at its boundary:
 takes a decision JSON string. The pure-Python layers parse/build that JSON.
 """
 
-from .openoutcry_py import TradingEnv, score_run, validate_decision_json
+from .openoutcry_py import TradingEnv, VecTradingEnv, score_run, validate_decision_json
 from .gym import OpenOutcryEnv
+from .vector import OpenOutcryVectorEnv
 from .check_env import check_env, check_determinism_across_constructors
 from .wrappers import (
     TimeLimit,
@@ -24,12 +25,27 @@ from .generalization import train_test_seeds, evaluate_seeds, generalization_gap
 from .verifiers_env import OpenOutcryVerifiersEnv, load_environment, build_rubric
 from .dataset import build_scenario_dataset, seed_ranges_disjoint
 from .decision_parser import parse_decision
+from .lookahead_guard import LookaheadGuard, LookaheadViolation, guarded, wrap_policy
+from .trace import SCHEMA_VERSION, RolloutTraceWriter, load_trace, trace_to_returns
+from .metrics import RunMetrics, cost_adjusted_score
 
 __all__ = [
     "TradingEnv",
+    "VecTradingEnv",
     "score_run",
     "validate_decision_json",
     "OpenOutcryEnv",
+    "OpenOutcryVectorEnv",
+    "LookaheadGuard",
+    "LookaheadViolation",
+    "guarded",
+    "wrap_policy",
+    "SCHEMA_VERSION",
+    "RolloutTraceWriter",
+    "load_trace",
+    "trace_to_returns",
+    "RunMetrics",
+    "cost_adjusted_score",
     "check_env",
     "check_determinism_across_constructors",
     "TimeLimit",

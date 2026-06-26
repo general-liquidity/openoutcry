@@ -276,7 +276,9 @@ def load_environment(dataset: Any = None, **kwargs: Any):
 
     Builds a default multi-row train dataset when none is supplied (never the 1-row stub —
     GRPO needs ``num_tasks > 1``). Accepts ``n_symbols``, ``n_days``, ``n_windows``,
-    ``max_episode_bars``, ``max_turns``, ``max_weight``, ``allow_short``.
+    ``max_episode_bars``, ``max_turns``, ``max_weight``, ``allow_short``, and ``mode`` /
+    ``seed_start`` — ``mode="eval"`` draws from the disjoint ``EVAL_SEED_BASE`` band so an
+    in-config eval set is genuinely held out from training.
     """
     if not _HAS_VERIFIERS:
         raise RuntimeError(
@@ -289,6 +291,8 @@ def load_environment(dataset: Any = None, **kwargs: Any):
     max_episode_bars = int(kwargs.pop("max_episode_bars", 64))
     max_weight = float(kwargs.pop("max_weight", 1.0))
     allow_short = bool(kwargs.pop("allow_short", True))
+    mode = str(kwargs.pop("mode", "train"))
+    seed_start = int(kwargs.pop("seed_start", 0))
     max_turns = kwargs.pop("max_turns", None)
     if max_turns is None:
         # +2: one turn for the initial decision, one for the final-bar message.
@@ -301,7 +305,8 @@ def load_environment(dataset: Any = None, **kwargs: Any):
             n_windows=n_windows,
             n_symbols=n_symbols,
             n_days=n_days,
-            mode="train",
+            seed_start=seed_start,
+            mode=mode,
             allow_short=allow_short,
         )
 
