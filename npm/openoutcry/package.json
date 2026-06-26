@@ -15,10 +15,10 @@
   "license": "MIT OR Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/general-liquidity/sharpebench.git",
+    "url": "git+https://github.com/general-liquidity/openoutcry.git",
     "directory": "npm/openoutcry"
   },
-  "homepage": "https://github.com/general-liquidity/sharpebench#readme",
+  "homepage": "https://github.com/general-liquidity/openoutcry#readme",
   "type": "commonjs",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

@@ -111,3 +111,6 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist
+          # Idempotent re-runs: a version already on PyPI is skipped, not an error
+          # (matches the crates + npm skip-if-published guards in this workflow).
+          skip-existing: true
