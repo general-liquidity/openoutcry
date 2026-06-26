@@ -124,6 +124,45 @@ def test_reset_seed_selects_scenario():
     assert info["scenario_seed"] == 99
 
 
+def test_reset_info_carries_split_seeds():
+    """R4 split seeding: the user seed fans out into independent scenario/execution
+    streams, echoed in ``info["seeds"]`` and reproducible from the user seed."""
+    env = OpenOutcryEnv(n_symbols=3, n_days=40, seed=7)
+    _obs, info = env.reset()
+    assert info["scenario_seed"] == 7
+    assert set(info["seeds"]) == {"scenario", "execution"}
+    assert info["seeds"]["scenario"] != info["seeds"]["execution"]
+
+    # Reproducible: the same user seed yields the same resolved pair.
+    _obs2, info2 = env.reset(seed=7)
+    assert info2["seeds"] == info["seeds"]
+    # A distinct user seed resolves to a distinct pair.
+    _obs3, info3 = env.reset(seed=8)
+    assert info3["seeds"] != info["seeds"]
+    assert info3["scenario_seed"] == 8
+
+
+def test_hard_distribution_diverges_from_calm():
+    def rollout(mode: str) -> list[float]:
+        env = OpenOutcryEnv(n_symbols=4, n_days=60, seed=5, distribution_mode=mode)
+        env.reset()
+        action = _equal_weight_action(env)
+        out = []
+        done = False
+        while not done:
+            _obs, reward, terminated, truncated, _info = env.step(action)
+            out.append(reward)
+            done = terminated or truncated
+        return out
+
+    assert rollout("calm") != rollout("hard"), "hard tier must diverge from calm"
+
+
+def test_unknown_distribution_mode_rejected():
+    with pytest.raises(Exception):
+        OpenOutcryEnv(n_symbols=3, n_days=40, seed=1, distribution_mode="bogus")
+
+
 def test_from_csv_classmethod():
     csv = (
         "date,symbol,close\n"

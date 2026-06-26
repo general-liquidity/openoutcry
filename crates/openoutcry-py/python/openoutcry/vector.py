@@ -5,13 +5,17 @@
 ``reset() -> (obs_batch, infos)`` and ``step(actions) -> (obs_batch, rewards,
 terminated, truncated, infos)``, with numpy arrays of leading dim ``B``.
 
-**Autoreset mode — gym3 same-step.** When a lane finishes (``terminated`` on a blow-up,
-``truncated`` on running out of bars) the native engine resets that lane *in place* on
-the same step, so ``obs_batch[i]`` is already the new episode's t0 and ``infos["first"][i]``
-is ``True``. This is gymnasium's :class:`~gymnasium.vector.AutoresetMode.SAME_STEP`
-convention (equivalently gym3's ``first`` flag), not the 1.x ``NEXT_STEP`` default — the
-batch never stalls and there is no "do-nothing" reset step. The terminal observation is
-not surfaced (consistent with gym3); ``rewards``/``infos`` describe the step that ended.
+**Autoreset mode — selectable.** ``autoreset_mode`` chooses how a finished lane
+(``terminated`` on a blow-up, ``truncated`` on running out of bars) is recycled:
+
+- ``"next_step"`` (default, Gymnasium 1.x): the terminal step is returned verbatim and
+  the reset surfaces on the *following* step (reward 0, flags ``False``, ``first`` ``True``).
+- ``"same_step"`` (gym3): the lane resets *in place*, so ``obs_batch[i]`` is already the
+  new episode's t0 and ``infos["first"][i]`` is ``True``; the terminal obs/info ride in
+  ``infos["final_obs"][i]`` / ``infos["final_info"][i]``.
+- ``"disabled"``: the lane never auto-resets and stays at its terminal bar.
+
+Either way the batch never stalls; ``rewards``/``infos`` describe the step that executed.
 
 The action is a per-lane **target-weight vector** over the environment's symbols (shape
 ``(B, n_symbols)``), converted into the wire-format ``Decision`` JSON the binding expects.
@@ -28,9 +32,23 @@ from gymnasium import spaces
 from gymnasium.vector import VectorEnv
 from gymnasium.vector.utils import batch_space
 
+try:  # gymnasium >= 1.0 exposes the AutoresetMode enum; fall back to the string label.
+    from gymnasium.vector import AutoresetMode
+
+    _AUTORESET_ENUM = {
+        "next_step": AutoresetMode.NEXT_STEP,
+        "same_step": AutoresetMode.SAME_STEP,
+        "disabled": AutoresetMode.DISABLED,
+    }
+except Exception:  # noqa: BLE001
+    _AUTORESET_ENUM = {}
+
 from .openoutcry_py import VecTradingEnv
 
 _BUY, _SELL, _HOLD = "buy", "sell", "hold"
+
+# Eval scenarios live in a disjoint seed band (must match ``dataset.EVAL_SEED_BASE``).
+_EVAL_SEED_BASE = 1_000_000
 
 
 def _action_label(weight: float) -> str:
@@ -50,7 +68,7 @@ class OpenOutcryVectorEnv(VectorEnv):
     action space allows (set ``allow_short=False`` to clip the lower bound to 0).
     """
 
-    metadata = {"render_modes": [], "autoreset_mode": "same_step"}
+    metadata = {"render_modes": [], "autoreset_mode": "next_step"}
 
     def __init__(
         self,
@@ -63,12 +81,23 @@ class OpenOutcryVectorEnv(VectorEnv):
         window_end: Optional[int] = None,
         max_weight: float = 1.0,
         allow_short: bool = True,
+        distribution_mode: str = "calm",
+        autoreset_mode: str = "next_step",
+        mode: str = "train",
+        max_episode_steps: Optional[int] = None,
         env_kwargs: Optional[dict] = None,
     ) -> None:
+        # `max_episode_steps` is accepted for `gymnasium.make_vec` compatibility (it
+        # forwards the spec value to the vector entry point); the engine already
+        # truncates at the window end, so it is an advisory cap, not enforced here.
+        del max_episode_steps
+        if mode not in ("train", "eval"):
+            raise ValueError("mode must be 'train' or 'eval'")
         if seeds is None:
             if num_envs is None:
                 raise ValueError("pass either num_envs or seeds")
-            seeds = list(range(int(num_envs)))
+            base = _EVAL_SEED_BASE if mode == "eval" else 0
+            seeds = list(range(base, base + int(num_envs)))
         else:
             seeds = [int(s) for s in seeds]
             if num_envs is not None and num_envs != len(seeds):
@@ -78,6 +107,11 @@ class OpenOutcryVectorEnv(VectorEnv):
 
         self._seeds = list(seeds)
         self.num_envs = len(self._seeds)
+        self._autoreset_mode = autoreset_mode
+        self.metadata = {
+            **self.metadata,
+            "autoreset_mode": _AUTORESET_ENUM.get(autoreset_mode, autoreset_mode),
+        }
 
         kwargs: dict[str, Any] = dict(env_kwargs or {})
         self._env = VecTradingEnv(
@@ -86,6 +120,8 @@ class OpenOutcryVectorEnv(VectorEnv):
             n_days=n_days,
             window_start=window_start,
             window_end=window_end,
+            distribution_mode=distribution_mode,
+            autoreset_mode=autoreset_mode,
             **kwargs,
         )
 
@@ -192,6 +228,14 @@ class OpenOutcryVectorEnv(VectorEnv):
             "first": np.asarray(out["first"], dtype=bool),
             "nav": np.array([i["nav"] for i in out["infos"]], dtype=np.float64),
         }
+        if self._autoreset_mode == "same_step":
+            # SAME_STEP surfaces each finished lane's terminal obs/info alongside the
+            # already-reset batch (None for lanes that did not finish this step).
+            infos["final_obs"] = np.array(
+                [self._decode_obs(o) if o is not None else None for o in out["final_obs"]],
+                dtype=object,
+            )
+            infos["final_info"] = np.array(out["final_info"], dtype=object)
         return obs, rewards, terminated, truncated, infos
 
     def render(self):  # pragma: no cover - no visual rendering

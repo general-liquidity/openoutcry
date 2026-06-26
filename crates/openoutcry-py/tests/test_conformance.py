@@ -5,8 +5,12 @@ Run from the crate dir after ``python -m maturin develop``::
     python -m pytest crates/openoutcry-py/tests/test_conformance.py -q
 """
 
+import warnings
+
 import numpy as np
 import pytest
+
+from gymnasium.utils.env_checker import check_env as gym_check_env
 
 from openoutcry import OpenOutcryEnv
 from openoutcry.check_env import check_env, check_determinism_across_constructors
@@ -41,6 +45,15 @@ def test_check_env_passes():
 
 def test_check_determinism_across_constructors():
     check_determinism_across_constructors(lambda: _make(7))
+
+
+def test_gymnasium_env_checker_passes():
+    # Gymnasium's own checker asserts more than the home-grown one (per-step passive
+    # checks, normalized-action bounds, that the reset seed is actually consumed). Run it
+    # alongside ours. A missing-spec warning is expected and harmless.
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        gym_check_env(_make(0), skip_render_check=True)
 
 
 def test_same_seed_identical_reset_obs():

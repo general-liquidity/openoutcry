@@ -59,7 +59,11 @@ def test_native_vec_soa_json_boundary():
 def test_b1_matches_scalar_engine():
     seed, n_symbols, n_days = 11, 4, 40
     scalar = TradingEnv(n_symbols=n_symbols, n_days=n_days, seed=seed)
-    vec = VecTradingEnv(seeds=[seed], n_symbols=n_symbols, n_days=n_days)
+    # same_step mirrors the scalar reset()/step() pattern (reset in place on the
+    # ending step), so the B=1 lane is byte-identical to the scalar engine.
+    vec = VecTradingEnv(
+        seeds=[seed], n_symbols=n_symbols, n_days=n_days, autoreset_mode="same_step"
+    )
 
     s_obs = json.loads(scalar.reset())
     v_reset = json.loads(vec.reset_batch())
@@ -131,3 +135,73 @@ def test_vector_wrapper_num_envs_from_count():
     assert env.scenario_seeds == [0, 1, 2]
     obs, _ = env.reset()
     assert obs["closes"].shape == (3, 2)
+
+
+def test_hard_distribution_diverges_from_calm():
+    def rollout(mode: str) -> list[float]:
+        env = OpenOutcryVectorEnv(seeds=[5], n_symbols=4, n_days=60, distribution_mode=mode)
+        env.reset()
+        out = []
+        for _ in range(40):
+            actions = np.full((1, 4), 0.5, dtype=np.float32)
+            _o, rewards, _t, _tr, _i = env.step(actions)
+            out.append(float(rewards[0]))
+        return out
+
+    assert rollout("calm") != rollout("hard")
+
+
+def test_next_step_defers_reset_to_following_step():
+    env = OpenOutcryVectorEnv(seeds=[1], n_symbols=3, n_days=25, autoreset_mode="next_step")
+    assert env._autoreset_mode == "next_step"
+    env.reset()
+    prev_ended = False
+    saw_deferred_reset = False
+    for _ in range(120):
+        actions = np.zeros((1, 3), dtype=np.float32)
+        _o, rewards, terminated, truncated, infos = env.step(actions)
+        if prev_ended:
+            # The step after an ending step is the deferred reset: reward 0, flags False.
+            assert infos["first"][0]
+            assert rewards[0] == 0.0
+            assert not terminated[0] and not truncated[0]
+            saw_deferred_reset = True
+            break
+        ended = bool(terminated[0] or truncated[0])
+        if ended:
+            assert not infos["first"][0], "next_step must not reset on the ending step"
+        prev_ended = ended
+    assert saw_deferred_reset
+
+
+def test_same_step_surfaces_final_obs():
+    env = OpenOutcryVectorEnv(seeds=[1], n_symbols=3, n_days=25, autoreset_mode="same_step")
+    assert env._autoreset_mode == "same_step"
+    env.reset()
+    saw_reset = False
+    for _ in range(120):
+        actions = np.zeros((1, 3), dtype=np.float32)
+        _o, _r, _t, _tr, infos = env.step(actions)
+        if infos["first"][0]:
+            assert "final_obs" in infos and "final_info" in infos
+            assert infos["final_obs"][0] is not None
+            assert infos["final_info"][0] is not None
+            saw_reset = True
+            break
+    assert saw_reset
+
+
+def test_disabled_never_resets():
+    env = OpenOutcryVectorEnv(seeds=[1], n_symbols=3, n_days=25, autoreset_mode="disabled")
+    env.reset()
+    infos = {}
+    for _ in range(80):
+        actions = np.zeros((1, 3), dtype=np.float32)
+        _o, _r, _t, _tr, infos = env.step(actions)
+        assert not infos["first"][0], "disabled never flags first"
+    assert "final_obs" not in infos
+
+
+def test_unknown_autoreset_mode_rejected():
+    with pytest.raises(Exception):
+        OpenOutcryVectorEnv(seeds=[1], n_symbols=2, n_days=20, autoreset_mode="bogus")

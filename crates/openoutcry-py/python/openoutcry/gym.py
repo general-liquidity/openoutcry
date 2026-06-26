@@ -32,6 +32,11 @@ def _action_label(weight: float) -> str:
     return _HOLD
 
 
+# Eval scenarios live in a disjoint seed band so a held-out eval set never overlaps
+# training. Must match ``dataset.EVAL_SEED_BASE``.
+_EVAL_SEED_BASE = 1_000_000
+
+
 class OpenOutcryEnv(gym.Env):
     """Gymnasium env over a leak-free, point-in-time market.
 
@@ -53,16 +58,23 @@ class OpenOutcryEnv(gym.Env):
         csv_text: Optional[str] = None,
         max_weight: float = 1.0,
         allow_short: bool = True,
+        distribution_mode: str = "calm",
+        mode: str = "train",
         env_kwargs: Optional[dict] = None,
     ) -> None:
         super().__init__()
+        if mode not in ("train", "eval"):
+            raise ValueError("mode must be 'train' or 'eval'")
         self._seed = int(seed)
         self._n_symbols = n_symbols
         self._n_days = n_days
         self._window_start = window_start
         self._window_end = window_end
         self._csv_text = csv_text
+        self._distribution_mode = distribution_mode
+        self._seed_offset = _EVAL_SEED_BASE if mode == "eval" else 0
         self._kwargs: dict[str, Any] = dict(env_kwargs or {})
+        self._resolved_seeds: dict[str, int] = {}
         self._env = self._build_env(self._seed)
 
         # Discover the symbol axis from the first observation so the spaces match
@@ -91,24 +103,38 @@ class OpenOutcryEnv(gym.Env):
 
     # -- internal helpers --------------------------------------------------
 
+    @staticmethod
+    def _resolve_seeds(user_seed: int) -> tuple[int, int]:
+        """Split one user seed into two independent streams via ``SeedSequence`` — a
+        scenario seed (the price path) and an execution seed (fill/slippage noise) — so
+        the two are decorrelated yet fully reproducible from the single user seed."""
+        state = np.random.SeedSequence(int(user_seed)).generate_state(2)
+        return int(state[0]), int(state[1])
+
     def _build_env(self, seed: int) -> TradingEnv:
-        """Construct the native env at ``seed``. For a synthetic dataset the seed
-        selects the scenario (a different point-in-time price path); for a frozen CSV
-        the path is fixed and the seed only varies execution noise."""
+        """Construct the native env at ``seed``. The user seed is split into independent
+        scenario/execution streams: the scenario seed selects the point-in-time price path
+        (under ``distribution_mode``), the execution seed varies fill/slippage noise. For a
+        frozen CSV the path is fixed, so only the execution seed bites."""
+        scenario_seed, exec_seed = self._resolve_seeds(seed + self._seed_offset)
+        self._resolved_seeds = {"scenario": scenario_seed, "execution": exec_seed}
         if self._csv_text is not None:
             return TradingEnv.from_csv(
                 self._csv_text,
-                seed=seed,
+                seed=scenario_seed,
                 window_start=self._window_start,
                 window_end=self._window_end,
+                exec_seed=exec_seed,
                 **self._kwargs,
             )
         return TradingEnv(
             n_symbols=self._n_symbols,
             n_days=self._n_days,
-            seed=seed,
+            seed=scenario_seed,
             window_start=self._window_start,
             window_end=self._window_end,
+            distribution_mode=self._distribution_mode,
+            exec_seed=exec_seed,
             **self._kwargs,
         )
 
@@ -198,7 +224,11 @@ class OpenOutcryEnv(gym.Env):
             self._seed = int(seed)
             self._env = self._build_env(self._seed)
         obs_json = self._env.reset()
-        return self._decode_obs(obs_json), {"scenario_seed": self._seed}
+        info = {
+            "scenario_seed": self._seed,
+            "seeds": dict(self._resolved_seeds),
+        }
+        return self._decode_obs(obs_json), info
 
     def step(
         self, action: np.ndarray

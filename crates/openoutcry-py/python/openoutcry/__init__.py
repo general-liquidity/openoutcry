@@ -28,6 +28,28 @@ from .decision_parser import parse_decision
 from .lookahead_guard import LookaheadGuard, LookaheadViolation, guarded, wrap_policy
 from .trace import SCHEMA_VERSION, RolloutTraceWriter, load_trace, trace_to_returns
 from .metrics import RunMetrics, cost_adjusted_score
+from .wrappers_vector import (
+    VectorCausalNormalizeObservation,
+    VectorRecordEpisodeStatistics,
+)
+from .spaces import flatten_obs, unflatten_obs, flat_dim, FlattenObservation
+from .execution_noise import ExecutionNoiseWrapper
+from .mandate import (
+    Mandate,
+    sample_mandate,
+    mandate_text,
+    mandate_breach,
+    mandate_from_dict,
+    validate_mandate,
+)
+from .verifiers_env import mandate_reward
+from .baselines import run_baselines, leaderboard_markdown
+from .minari_export import to_minari
+from .pettingzoo_env import MultiAgentOpenOutcryEnv, make_aec_env
+from .registration import register_envs
+
+# Farama plugin convention: register the versioned env IDs at import time (idempotent).
+register_envs()
 
 __all__ = [
     "TradingEnv",
@@ -62,5 +84,25 @@ __all__ = [
     "build_scenario_dataset",
     "seed_ranges_disjoint",
     "parse_decision",
+    "VectorCausalNormalizeObservation",
+    "VectorRecordEpisodeStatistics",
+    "flatten_obs",
+    "unflatten_obs",
+    "flat_dim",
+    "FlattenObservation",
+    "ExecutionNoiseWrapper",
+    "Mandate",
+    "sample_mandate",
+    "mandate_text",
+    "mandate_breach",
+    "mandate_from_dict",
+    "validate_mandate",
+    "mandate_reward",
+    "run_baselines",
+    "leaderboard_markdown",
+    "to_minari",
+    "MultiAgentOpenOutcryEnv",
+    "make_aec_env",
+    "register_envs",
 ]
 __version__ = "0.1.0"

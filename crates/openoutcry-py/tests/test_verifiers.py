@@ -19,11 +19,20 @@ from openoutcry.dataset import (
     seed_ranges_disjoint,
 )
 from openoutcry.decision_parser import parse_decision
+from openoutcry.mandate import (
+    Mandate,
+    mandate_breach,
+    mandate_from_dict,
+    mandate_text,
+    sample_mandate,
+    validate_mandate,
+)
 from openoutcry.verifiers_env import (
     OpenOutcryVerifiersEnv,
     build_rubric,
     deflated_sharpe_reward,
     load_environment,
+    mandate_reward,
     pass_k_reward,
     process_check_reward,
     realized_return_reward,
@@ -102,6 +111,99 @@ def test_build_scenario_dataset_multirow_and_disjoint():
     assert seed_ranges_disjoint(train, eval_ds)
     assert all(r["seed"] < EVAL_SEED_BASE for r in train["info"])
     assert all(r["seed"] >= EVAL_SEED_BASE for r in eval_ds["info"])
+
+
+# -- per-scenario mandates (the MiniGrid Fetch pattern) ----------------------
+
+def test_sample_mandate_is_deterministic_and_varies():
+    """Same seed -> identical mandate; the style varies across the seed space."""
+    a = sample_mandate(42, n_symbols=4)
+    b = sample_mandate(42, n_symbols=4)
+    assert a == b
+    assert validate_mandate(a) and a.style in (
+        "long_only",
+        "market_neutral",
+        "momentum",
+        "unconstrained",
+    )
+    styles = {sample_mandate(s, n_symbols=4).style for s in range(64)}
+    assert len(styles) > 1
+    # round-trips through plain JSON (trace/replay).
+    assert mandate_from_dict(a.to_dict()) == a
+    assert mandate_text(a) == a.text and isinstance(a.text, str) and a.text
+    # a long-only market never draws a short-requiring (market_neutral) mandate.
+    assert all(
+        sample_mandate(s, n_symbols=4, allow_short=False).style != "market_neutral"
+        for s in range(64)
+    )
+
+
+def test_mandate_breach_clean_vs_breached():
+    """0 for a clean long-only series; >0 for a short / a drawdown-cap breach."""
+    long_only = Mandate(style="long_only")
+    clean_events = [{"event": "target_weights", "weights": [0.5, 0.3]}] * 4
+    assert mandate_breach(long_only, [0.01, 0.0, 0.01, 0.0], clean_events) == 0.0
+    # a short under long_only breaches.
+    short_events = [{"event": "target_weights", "weights": [-0.5, 0.2]}] * 4
+    assert mandate_breach(long_only, [0.01, 0.0], short_events) > 0.0
+    # a drawdown-cap breach (a -30% bar against a 10% cap) penalizes even when long-only.
+    capped = Mandate(style="long_only", max_drawdown=0.10)
+    assert mandate_breach(capped, [-0.30, 0.0], clean_events) > 0.0
+    # market-neutral: a balanced long/short book is clean, a one-sided book breaches.
+    neutral = Mandate(style="market_neutral")
+    assert mandate_breach(neutral, [], [{"event": "target_weights", "weights": [0.5, -0.5]}]) == 0.0
+    assert mandate_breach(neutral, [], [{"event": "target_weights", "weights": [0.5, 0.5]}]) > 0.0
+    # breach is bounded in [0, 1].
+    assert 0.0 <= mandate_breach(long_only, [-0.9, -0.9], short_events) <= 1.0
+
+
+def test_mandate_reward_is_bounded_and_objective_conditioned():
+    """1 - breach, bounded; a no-mandate state is vacuously satisfied."""
+    assert mandate_reward(state={"returns": [], "events": []}) == 1.0  # no mandate -> 1
+    long_only = Mandate(style="long_only").to_dict()
+    clean = mandate_reward(
+        state={"mandate": long_only, "returns": [0.01], "events": [{"event": "target_weights", "weights": [0.4]}]}
+    )
+    shorted = mandate_reward(
+        state={"mandate": long_only, "returns": [0.01], "events": [{"event": "target_weights", "weights": [-0.4]}]}
+    )
+    assert clean == 1.0
+    assert 0.0 <= shorted < clean <= 1.0
+
+
+def test_dataset_rows_carry_mandate_and_question_includes_it():
+    ds = build_scenario_dataset(n_windows=4, n_symbols=3, n_days=30, mode="train")
+    for row in ds:
+        m = row["info"]["mandate"]
+        assert validate_mandate(m)
+        # the per-scenario objective is woven into the prompt.
+        assert mandate_text(mandate_from_dict(m)) in row["question"]
+        assert "Mandate:" in row["question"]
+
+
+def test_rubric_includes_the_mandate_reward():
+    rubric = build_rubric()
+    # the mandate is a weighted reward (in `funcs`), not a zero-weight metric.
+    names = {getattr(f, "__name__", str(f)) for f in rubric.funcs}
+    assert "mandate_reward" in names
+
+
+def test_rollout_threads_mandate_into_state():
+    env = OpenOutcryVerifiersEnv(
+        dataset=build_scenario_dataset(n_windows=1, n_symbols=2, n_days=20, mode="train"),
+        rubric=build_rubric(),
+        max_turns=6,
+        max_episode_bars=3,
+    )
+    mandate = Mandate(style="long_only", max_drawdown=0.10).to_dict()
+    state = {"info": {"seed": 5, "n_symbols": 2, "n_days": 20, "mandate": mandate}, "answer": "5"}
+    _run(env.setup_state(state))
+    assert validate_mandate(state["mandate"])
+    assert state["mandate"]["style"] == "long_only"
+    # a state without a row mandate still gets the seed-derived one.
+    state2 = {"info": {"seed": 9, "n_symbols": 2, "n_days": 20}, "answer": "9"}
+    _run(env.setup_state(state2))
+    assert validate_mandate(state2["mandate"])
 
 
 # -- the actual bug fix: a rollout steps a market and populates state --------

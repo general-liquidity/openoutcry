@@ -31,6 +31,7 @@ import numpy as np
 from .openoutcry_py import score_run  # the real SharpeBench scorer (pyo3)
 from .gym import OpenOutcryEnv
 from .decision_parser import build_parser, format_reward, parse_decision
+from .mandate import mandate_breach, sample_mandate, validate_mandate
 
 try:  # pragma: no cover - exercised only when verifiers is installed
     import verifiers as vf
@@ -111,16 +112,50 @@ def process_check_reward(
     return 1.0 if bad == 0 else max(0.0, 1.0 - 0.25 * bad)
 
 
+def _mandate_from_state(state: Optional[dict]) -> Optional[dict]:
+    """The scenario's mandate dict, preferring the one threaded into ``state`` at setup,
+    falling back to the dataset row ``info``. ``None`` if the scenario carries none."""
+    st = state or {}
+    cand = st.get("mandate")
+    if validate_mandate(cand):
+        return cand  # type: ignore[return-value]
+    info = st.get("info")
+    if isinstance(info, dict) and validate_mandate(info.get("mandate")):
+        return info["mandate"]
+    return None
+
+
+def mandate_reward(
+    completion: Any = None,
+    state: Optional[dict] = None,
+    **kwargs: Any,
+) -> float:
+    """Grade the episode against *its* mandate (the MiniGrid *Fetch* pattern): ``1 -
+    mandate_breach`` over the recorded weights/returns, bounded in ``[0, 1]``.
+
+    A scenario with no mandate is vacuously satisfied (1.0). Wrong-objective behavior — a
+    short under a long-only mandate, a blown drawdown cap — drives this below 1, so the
+    agent is rewarded for satisfying the per-scenario objective rather than a fixed one."""
+    m = _mandate_from_state(state)
+    if m is None:
+        return 1.0
+    rets = _returns_from_state(state)
+    events = (state or {}).get("events", []) or []
+    return float(1.0 - mandate_breach(m, rets, list(events)))
+
+
 def build_rubric(*, parser: Any = None):
     """The reward bundle. Dense realized-return is the primary GRPO objective; the real
-    deflated Sharpe is a secondary objective; ``pass^k`` / process discipline / format
-    are zero-weight diagnostic metrics (gates, not gradient). Raises if ``verifiers`` is
-    unavailable."""
+    deflated Sharpe is a secondary objective; the **mandate** is a weighted reward (not a
+    metric) — the episode is graded on satisfying *its* per-scenario objective, so
+    wrong-objective behavior has to bite the gradient, which a zero-weight metric would
+    not do. ``pass^k`` / process discipline / format stay zero-weight diagnostics (gates,
+    not gradient). Raises if ``verifiers`` is unavailable."""
     if not _HAS_VERIFIERS:
         raise RuntimeError("verifiers is not installed; cannot build a Rubric")
     rubric = vf.Rubric(
-        funcs=[realized_return_reward, deflated_sharpe_reward],
-        weights=[1.0, 0.5],
+        funcs=[realized_return_reward, deflated_sharpe_reward, mandate_reward],
+        weights=[1.0, 0.5, 0.5],
         parser=parser,
     )
     rubric.add_metric(pass_k_reward)
@@ -221,6 +256,17 @@ if _HAS_VERIFIERS:
             state["returns"] = []
             state["events"] = []
             state["_oo_last_obs"] = obs
+            # Thread the scenario mandate into state so mandate_reward can read it.
+            # Prefer the dataset row's mandate; fall back to the (leak-free) seed-derived
+            # one so a hand-built state without info still grades against a real mandate.
+            mandate = info.get("mandate")
+            if not validate_mandate(mandate):
+                mandate = sample_mandate(
+                    seed,
+                    n_symbols=int(info.get("n_symbols", self._n_symbols)),
+                    allow_short=self._allow_short,
+                ).to_dict()
+            state["mandate"] = mandate
 
         def _close_env(self, state: dict) -> None:
             env = state.pop("_oo_env", None)
@@ -244,6 +290,12 @@ if _HAS_VERIFIERS:
             env = state["_oo_env"]
             symbols = state["_oo_symbols"]
             action = parse_decision(_last_assistant_text(messages), symbols)
+            # Record the chosen target weights as an event so the mandate breach checker
+            # can see the structural decision (a short under long_only, net exposure under
+            # market_neutral) — the env's own events only carry market-side facts.
+            state["events"].append(
+                {"event": "target_weights", "weights": [float(x) for x in action.tolist()]}
+            )
             obs, reward, terminated, truncated, info = env.step(action)
             state["returns"].append(float(reward))
             for e in info.get("events", []) or []:
@@ -330,6 +382,7 @@ __all__ = [
     "deflated_sharpe_reward",
     "pass_k_reward",
     "process_check_reward",
+    "mandate_reward",
     "build_rubric",
     "load_environment",
     "render_observation",

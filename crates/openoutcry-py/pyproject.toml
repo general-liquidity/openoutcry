@@ -27,6 +27,8 @@ dependencies = [
 
 [project.optional-dependencies]
 verifiers = ["verifiers"]
+minari = ["minari"]
+pettingzoo = ["pettingzoo"]
 
 # Defaults for `vf-eval openoutcry` (read by verifiers' eval script from this table).
 # A bare `vf-eval openoutcry` then scores 16 scenarios x 3 rollouts of the v1 taskset.
