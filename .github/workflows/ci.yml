@@ -14,9 +14,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Install Rust (pinned via rust-toolchain.toml)
-        uses: dtolnay/rust-toolchain@stable
+      # Pin to the rust-toolchain.toml channel (1.96.0) so the wasm32 target lands on
+      # the toolchain cargo actually builds with. With @stable the target is added to
+      # stable, but the build uses 1.96.0 (rust-toolchain.toml) and can't find std.
+      - name: Install Rust 1.96.0 (+ wasm target)
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.96.0"
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
       - name: Format
@@ -57,13 +61,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust 1.96.0
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.96.0"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: maturin develop + pytest
+      - name: maturin develop + pytest (in a venv)
         working-directory: crates/openoutcry-py
         run: |
-          python -m pip install --upgrade pip maturin pytest numpy gymnasium
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip maturin pytest numpy gymnasium
           maturin develop
           python -m pytest -q
