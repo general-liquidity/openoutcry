@@ -57,24 +57,13 @@ class OpenOutcryEnv(gym.Env):
     ) -> None:
         super().__init__()
         self._seed = int(seed)
-        kwargs: dict[str, Any] = dict(env_kwargs or {})
-        if csv_text is not None:
-            self._env = TradingEnv.from_csv(
-                csv_text,
-                seed=seed,
-                window_start=window_start,
-                window_end=window_end,
-                **kwargs,
-            )
-        else:
-            self._env = TradingEnv(
-                n_symbols=n_symbols,
-                n_days=n_days,
-                seed=seed,
-                window_start=window_start,
-                window_end=window_end,
-                **kwargs,
-            )
+        self._n_symbols = n_symbols
+        self._n_days = n_days
+        self._window_start = window_start
+        self._window_end = window_end
+        self._csv_text = csv_text
+        self._kwargs: dict[str, Any] = dict(env_kwargs or {})
+        self._env = self._build_env(self._seed)
 
         # Discover the symbol axis from the first observation so the spaces match
         # the dataset exactly (works for both synthetic and CSV datasets).
@@ -101,6 +90,27 @@ class OpenOutcryEnv(gym.Env):
         )
 
     # -- internal helpers --------------------------------------------------
+
+    def _build_env(self, seed: int) -> TradingEnv:
+        """Construct the native env at ``seed``. For a synthetic dataset the seed
+        selects the scenario (a different point-in-time price path); for a frozen CSV
+        the path is fixed and the seed only varies execution noise."""
+        if self._csv_text is not None:
+            return TradingEnv.from_csv(
+                self._csv_text,
+                seed=seed,
+                window_start=self._window_start,
+                window_end=self._window_end,
+                **self._kwargs,
+            )
+        return TradingEnv(
+            n_symbols=self._n_symbols,
+            n_days=self._n_days,
+            seed=seed,
+            window_start=self._window_start,
+            window_end=self._window_end,
+            **self._kwargs,
+        )
 
     def _decode_obs(self, obs_json: str) -> dict[str, np.ndarray]:
         obs = json.loads(obs_json)
@@ -179,7 +189,14 @@ class OpenOutcryEnv(gym.Env):
     def reset(
         self, *, seed: Optional[int] = None, options: Optional[dict] = None
     ) -> tuple[dict[str, np.ndarray], dict]:
+        """Reset the episode. Passing an int ``seed`` selects the scenario: a synthetic
+        env rebuilds on the new seed (a different point-in-time price path), so
+        ``reset(seed=k)`` is reproducible and distinct seeds give distinct markets.
+        ``seed=None`` keeps the current scenario (the gymnasium "seed once" paradigm)."""
         super().reset(seed=seed)
+        if seed is not None:
+            self._seed = int(seed)
+            self._env = self._build_env(self._seed)
         obs_json = self._env.reset()
         return self._decode_obs(obs_json), {"scenario_seed": self._seed}
 

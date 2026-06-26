@@ -6,10 +6,12 @@
 //! generalization is governed exactly the way Procgen governs it — by splitting the
 //! seed *interval*, not the data — so an agent provably never trains on a test seed.
 //!
-//! The generator composes ONLY existing leak-free primitives ([`Dataset::synthetic`],
-//! [`Dataset::stress_suite`], [`Dataset::masked`]); deeper per-scenario vol/jump
-//! parameterization (continuous difficulty, not the discrete Calm/Hard/Extreme tiers)
-//! would require new constructors in `sharpebench-sim` and is deliberately deferred.
+//! `Calm` is the mild [`Dataset::synthetic`] panel; `Hard` / `Extreme` post-process
+//! that same seeded panel — amplifying each bar's volatility around the symbol's mean
+//! return and injecting seeded jumps. The transform uses only mul/add/div/`max` (no
+//! `ln`/`exp`, which differ across libm implementations), so a generated panel is
+//! byte-identical across Rust, WASM, and Python, and `n_symbols` / `n_days` are
+//! honored by every tier.
 
 use serde::{Deserialize, Serialize};
 
@@ -23,11 +25,9 @@ pub enum DistributionMode {
     /// Mild, momentum-autocorrelated synthetic panel ([`Dataset::synthetic`]).
     #[default]
     Calm,
-    /// A crisis-suite panel (flash-crash / whipsaw), selected by the seed.
+    /// The seeded panel with amplified volatility and occasional jumps.
     Hard,
-    /// The same crisis panel, contamination-masked ([`Dataset::masked`]) so the
-    /// agent cannot pattern-match a memorized ticker or calendar window on top of
-    /// the adversarial price path.
+    /// The seeded panel with high volatility and frequent, larger jumps.
     Extreme,
 }
 
@@ -57,29 +57,96 @@ impl Default for ScenarioSpec {
     }
 }
 
-/// Pick one crisis-suite panel deterministically by seed. The suite is non-empty by
-/// construction, so the index is always valid.
-fn stress_pick(seed: u64) -> Dataset {
-    let suite = Dataset::stress_suite(seed);
-    let idx = (seed % suite.len() as u64) as usize;
-    suite
-        .into_iter()
-        .nth(idx)
-        .expect("stress suite is non-empty")
-        .1
+/// SplitMix64 — the same dependency-free PRNG family [`Dataset::synthetic`] uses, so
+/// jump injection stays cross-runtime deterministic (no transcendental calls).
+struct SplitMix64(u64);
+
+impl SplitMix64 {
+    fn new(seed: u64) -> Self {
+        SplitMix64(seed ^ 0x1234_5678_9ABC_DEF0)
+    }
+
+    /// Next draw in `[0, 1)`.
+    fn next_unit(&mut self) -> f64 {
+        self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        z ^= z >> 31;
+        (z >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+/// Difficulty knobs for [`amplify`]: a `mode_salt` (so each tier draws a distinct jump
+/// stream), the volatility multiplier on each bar's deviation from the symbol's mean
+/// return, and the per-bar jump probability and magnitude.
+struct AmplifyParams {
+    mode_salt: u64,
+    vol_mult: f64,
+    jump_prob: f64,
+    jump_size: f64,
+}
+
+/// Post-process a base panel: amplify each symbol's per-bar volatility around its mean
+/// return and inject seeded jumps. Returns are recomputed simple (mul/add/div/`max`
+/// only — no `ln`/`exp`), so the result is byte-identical across runtimes and prices
+/// stay strictly positive (the `max(-0.95)` floor keeps `1 + r > 0`).
+fn amplify(mut base: Dataset, seed: u64, p: AmplifyParams) -> Dataset {
+    let mut rng = SplitMix64::new(seed ^ p.mode_salt);
+    for series in base.closes.values_mut() {
+        if series.len() < 2 {
+            continue;
+        }
+        let rets: Vec<f64> = (1..series.len())
+            .map(|t| series[t] / series[t - 1] - 1.0)
+            .collect();
+        let mean = rets.iter().sum::<f64>() / rets.len() as f64;
+        let mut price = series[0];
+        for (i, r) in rets.iter().enumerate() {
+            let jump = if rng.next_unit() < p.jump_prob {
+                if rng.next_unit() < 0.5 {
+                    p.jump_size
+                } else {
+                    -p.jump_size
+                }
+            } else {
+                0.0
+            };
+            let adjusted = (mean + p.vol_mult * (r - mean) + jump).max(-0.95);
+            price *= 1.0 + adjusted;
+            series[i + 1] = price;
+        }
+    }
+    base
 }
 
 /// Generate the [`Dataset`] for `spec` under `seed`. Deterministic: identical
-/// `(spec, seed)` ⇒ identical `Dataset`.
-///
-/// `n_symbols` / `n_days` are honored by the `Calm` tier; `Hard` / `Extreme` draw
-/// from the crisis suite, which fixes its own panel dimensions (parameterizing those
-/// is the deferred `sharpebench-sim` follow-up noted in the module docs).
+/// `(spec, seed)` ⇒ identical `Dataset`. `n_symbols` / `n_days` are honored by every
+/// tier; `Hard` / `Extreme` amplify the same seeded panel (see [`amplify`]).
 pub fn generate_scenario(spec: &ScenarioSpec, seed: u64) -> Dataset {
+    let base = Dataset::synthetic(spec.n_symbols, spec.n_days, seed);
     match spec.distribution_mode {
-        DistributionMode::Calm => Dataset::synthetic(spec.n_symbols, spec.n_days, seed),
-        DistributionMode::Hard => stress_pick(seed),
-        DistributionMode::Extreme => stress_pick(seed).masked(),
+        DistributionMode::Calm => base,
+        DistributionMode::Hard => amplify(
+            base,
+            seed,
+            AmplifyParams {
+                mode_salt: 0x4861_7264_5f5f_5f5f,
+                vol_mult: 1.8,
+                jump_prob: 0.02,
+                jump_size: 0.06,
+            },
+        ),
+        DistributionMode::Extreme => amplify(
+            base,
+            seed,
+            AmplifyParams {
+                mode_salt: 0x4578_7472_5f5f_5f5f,
+                vol_mult: 3.0,
+                jump_prob: 0.06,
+                jump_size: 0.13,
+            },
+        ),
     }
 }
 
@@ -142,6 +209,22 @@ mod tests {
     /// JSON. A published generalization number must reproduce on any runtime, so this
     /// pins the FP/serialization determinism; the wasm crate asserts the same value.
     const GOLDEN_CALM_4X120_SEED7_FNV1A: u64 = 0xb7cf_976c_7121_9c52;
+    const GOLDEN_HARD_4X120_SEED7_FNV1A: u64 = 0x2ef5_aff1_a716_05e6;
+    const GOLDEN_EXTREME_4X120_SEED7_FNV1A: u64 = 0xb082_0c4d_2c73_7f88;
+
+    /// Mean per-symbol stdev of simple returns — a realized-volatility proxy.
+    fn realized_vol(d: &Dataset) -> f64 {
+        let mut acc = 0.0;
+        for series in d.closes.values() {
+            let rets: Vec<f64> = (1..series.len())
+                .map(|t| series[t] / series[t - 1] - 1.0)
+                .collect();
+            let mean = rets.iter().sum::<f64>() / rets.len() as f64;
+            let var = rets.iter().map(|r| (r - mean).powi(2)).sum::<f64>() / rets.len() as f64;
+            acc += var.sqrt();
+        }
+        acc / d.closes.len() as f64
+    }
 
     fn golden_spec() -> ScenarioSpec {
         ScenarioSpec {
@@ -241,5 +324,34 @@ mod tests {
     fn golden_hash_is_stable() {
         let json = serde_json::to_string(&generate_scenario(&golden_spec(), 7)).unwrap();
         assert_eq!(fnv1a(json.as_bytes()), GOLDEN_CALM_4X120_SEED7_FNV1A);
+    }
+
+    #[test]
+    fn golden_hash_hard_extreme_stable() {
+        let hard = ScenarioSpec {
+            distribution_mode: DistributionMode::Hard,
+            ..golden_spec()
+        };
+        let extreme = ScenarioSpec {
+            distribution_mode: DistributionMode::Extreme,
+            ..golden_spec()
+        };
+        let hj = serde_json::to_string(&generate_scenario(&hard, 7)).unwrap();
+        let ej = serde_json::to_string(&generate_scenario(&extreme, 7)).unwrap();
+        assert_eq!(fnv1a(hj.as_bytes()), GOLDEN_HARD_4X120_SEED7_FNV1A);
+        assert_eq!(fnv1a(ej.as_bytes()), GOLDEN_EXTREME_4X120_SEED7_FNV1A);
+    }
+
+    #[test]
+    fn realized_vol_increases_with_difficulty() {
+        let spec = |m| ScenarioSpec {
+            distribution_mode: m,
+            ..ScenarioSpec::default()
+        };
+        let calm = realized_vol(&generate_scenario(&spec(DistributionMode::Calm), 7));
+        let hard = realized_vol(&generate_scenario(&spec(DistributionMode::Hard), 7));
+        let extreme = realized_vol(&generate_scenario(&spec(DistributionMode::Extreme), 7));
+        assert!(calm < hard, "calm {calm} should be < hard {hard}");
+        assert!(hard < extreme, "hard {hard} should be < extreme {extreme}");
     }
 }
