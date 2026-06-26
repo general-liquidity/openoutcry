@@ -47,7 +47,7 @@ Beyond the core `reset`/`step` lifecycle, the environment now ships a full **rei
 | **`verifiers` training env** | A PrimeIntellect `verifiers` `MultiTurnEnv` that steps the market bar-by-bar, over a multi-row scenario `Dataset`, with an `XMLParser` decision protocol and a GRPO-safe bounded reward scored by the real SharpeBench `score_run` (deflated Sharpe, pass^k, process checks). |
 | **Vectorized rollouts** | `VecTradingEnv` runs B scenario lanes in lockstep (rayon, structure-of-arrays JSON, gym3 same-step auto-reset), exposed as a `gymnasium.vector` env. |
 | **Point-in-time-safe wrappers** | Causal normalize (no future-bar leak), `TimeLimit`, `FrameStack`, `RecordEpisodeStatistics`, plus a `check_env` conformance harness that *proves* seed-determinism. |
-| **Harness integration** | An MCP server (`reset` / `step` / `spec` tools) so any MCP agent harness drives an episode with zero glue, a `LookaheadGuard` that refuses agent operations reading future data, and versioned JSONL rollout traces that re-score offline through the SharpeBench kernel. |
+| **Harness integration** | An MCP server (`reset` / `step` / `spec` tools) so any MCP agent harness drives an episode with zero glue, a `LookaheadGuard` that refuses agent operations reading future data, versioned JSONL rollout traces that re-score offline through the SharpeBench kernel, and a cost-adjusted `RunMetrics` block for leaderboard ranking. |
 
 **Not yet shipped:** the [PrimeIntellect](https://app.primeintellect.ai) Environments-Hub listing, multi-agent (shared-order-book) markets, and the Gordon conforming-agent adapter.
 
