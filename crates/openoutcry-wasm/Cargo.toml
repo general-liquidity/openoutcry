@@ -1,0 +1,26 @@
+[package]
+name = "openoutcry-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "WASM bindings for the OpenOutcry trading-agent environment (run baselines + recompute-to-verify via the identical engine)."
+repository.workspace = true
+
+[dependencies]
+openoutcry = { path = "../openoutcry", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+# `float_roundtrip` makes JSON float *parsing* bit-exact, so a Dataset/trajectory
+# round-tripped through the boundary recomputes to a byte-identical Run — the
+# recompute-to-verify invariant depends on it.
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+# wasm-bindgen is pulled in ONLY when building for the wasm target, so native
+# host builds (and CI) never compile it — they test the `*_json` kernels directly.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[lints]
+workspace = true

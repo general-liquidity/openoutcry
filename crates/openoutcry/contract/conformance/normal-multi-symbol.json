@@ -1,0 +1,31 @@
+{
+  "name": "normal multi-symbol observation with fundamentals, news and held positions",
+  "observation": {
+    "date": "2025-03-14",
+    "cash": 1.0,
+    "symbols": [
+      {
+        "symbol": "AAPL",
+        "close_history": [186.4, 187.2, 188.0, 190.4, 191.1],
+        "fundamentals": { "pe": 28.4, "revenue_yoy": 0.06 },
+        "news": ["Apple unveils new chip", "Services revenue at record"]
+      },
+      {
+        "symbol": "MSFT",
+        "close_history": [402.1, 405.6, 409.0, 411.3, 408.7],
+        "fundamentals": { "pe": 35.1, "revenue_yoy": 0.12 },
+        "news": ["Azure growth accelerates"]
+      },
+      {
+        "symbol": "NVDA",
+        "close_history": [870.0, 905.4, 889.2, 921.0, 950.5],
+        "fundamentals": { "pe": 61.0, "revenue_yoy": 1.22 },
+        "news": []
+      }
+    ],
+    "portfolio": [
+      { "symbol": "AAPL", "shares": 1.5, "avg_price": 180.0 },
+      { "symbol": "MSFT", "shares": 0.8, "avg_price": 395.0 }
+    ]
+  }
+}

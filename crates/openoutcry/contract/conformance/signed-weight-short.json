@@ -1,0 +1,23 @@
+{
+  "name": "exercises the full decision surface: sell/hold actions and a signed (short) target weight",
+  "observation": {
+    "date": "2025-05-05",
+    "cash": 1.0,
+    "symbols": [
+      { "symbol": "TSLA", "close_history": [240.0, 235.5, 230.1] },
+      { "symbol": "F", "close_history": [12.1, 12.0, 11.8] },
+      { "symbol": "GM", "close_history": [44.0, 44.6, 45.2] }
+    ],
+    "portfolio": [
+      { "symbol": "TSLA", "shares": 0.5, "avg_price": 250.0 }
+    ]
+  },
+  "legacy_decision": {
+    "orders": [
+      { "symbol": "TSLA", "action": "sell", "target_weight": -0.3, "confidence": 0.7, "rationale": "downtrend" },
+      { "symbol": "F", "action": "hold", "target_weight": 0.0 },
+      { "symbol": "GM", "action": "buy", "target_weight": 0.5 }
+    ],
+    "reasoning": "tilt short autos ex-GM"
+  }
+}

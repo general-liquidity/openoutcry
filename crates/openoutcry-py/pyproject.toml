@@ -1,0 +1,34 @@
+[build-system]
+requires = ["maturin>=1.7,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "openoutcry"
+version = "0.0.6"
+description = "OpenOutcry — a leak-free, point-in-time Gym for trading agents (Python distribution)."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "General Liquidity, Inc." }]
+keywords = ["trading", "agent", "environment", "backtest", "reinforcement-learning", "gymnasium"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "numpy>=1.21",
+    "gymnasium>=1.0",
+]
+
+[project.optional-dependencies]
+verifiers = ["verifiers"]
+
+[tool.maturin]
+# Mixed Rust/Python layout: the pure-Python package lives under `python/openoutcry`,
+# and the compiled pyo3 extension is placed inside it as `openoutcry.openoutcry_py`.
+module-name = "openoutcry.openoutcry_py"
+python-source = "python"
+manifest-path = "Cargo.toml"
+features = ["pyo3/extension-module"]

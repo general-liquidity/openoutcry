@@ -1,0 +1,40 @@
+{
+  "name": "@general-liquidity/openoutcry",
+  "version": "0.0.6",
+  "description": "The leak-free, point-in-time trading-agent environment — a Gym for trading agents. Run reference baselines and recompute-to-verify any trajectory through the identical Rust engine as the SharpeBench harness, compiled to WASM.",
+  "keywords": [
+    "trading",
+    "agent",
+    "environment",
+    "gym",
+    "backtesting",
+    "simulation",
+    "point-in-time",
+    "wasm"
+  ],
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/general-liquidity/sharpebench.git",
+    "directory": "npm/openoutcry"
+  },
+  "homepage": "https://github.com/general-liquidity/sharpebench#readme",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "pkg"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test \"test/**/*.test.js\"",
+    "prepublishOnly": "tsc && node -e \"require('fs').rmSync('pkg/.gitignore',{force:true})\""
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

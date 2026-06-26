@@ -1,0 +1,17 @@
+{
+  "name": "single-symbol universe with one open position",
+  "observation": {
+    "date": "2025-06-20",
+    "cash": 0.25,
+    "symbols": [
+      {
+        "symbol": "BTC",
+        "close_history": [61000.0, 62450.0, 60900.5, 63100.0],
+        "news": ["ETF inflows continue"]
+      }
+    ],
+    "portfolio": [
+      { "symbol": "BTC", "shares": 0.012, "avg_price": 59000.0 }
+    ]
+  }
+}

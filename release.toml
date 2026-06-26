@@ -1,0 +1,22 @@
+# OpenOutcry release pipeline (cargo-release).
+#
+# Always run the green checks first (cargo-release will not):
+#   cargo test --workspace && cargo clippy --workspace --all-targets && cargo deny check
+#
+# Then cut a release — bump the shared version, rewrite inter-crate pins, tag, push:
+#   cargo release patch              # DRY RUN — prints what would happen
+#   cargo release patch --execute    # bump + tag + push  (publishing happens in CI)
+#
+# Publishing is done by CI via OIDC Trusted Publishing on the `v*` tag (see
+# RELEASING.md), NOT from the local machine — so `publish = false` here.
+
+shared-version = true
+consolidate-commits = true
+dependent-version = "upgrade"
+tag-name = "v{{version}}"
+tag-message = "OpenOutcry v{{version}}"
+pre-release-commit-message = "release: v{{version}}"
+
+publish = false # CI publishes via OIDC; never publish from a dev machine
+push = true
+allow-branch = ["main"]

@@ -1,0 +1,12 @@
+{
+  "name": "cold start: full cash, no holdings, snapshots omit optional fundamentals/news",
+  "observation": {
+    "date": "2025-01-02",
+    "cash": 1.0,
+    "symbols": [
+      { "symbol": "SPY", "close_history": [468.1, 470.0, 472.5] },
+      { "symbol": "QQQ", "close_history": [402.3, 404.9, 401.0] }
+    ],
+    "portfolio": []
+  }
+}

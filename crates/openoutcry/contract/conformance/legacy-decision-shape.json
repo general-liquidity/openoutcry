@@ -1,0 +1,18 @@
+{
+  "name": "legacy decision shape: orders omit confidence/rationale and the decision omits reasoning",
+  "observation": {
+    "date": "2025-02-10",
+    "cash": 1.0,
+    "symbols": [
+      { "symbol": "GLD", "close_history": [188.0, 189.5, 190.1] },
+      { "symbol": "SLV", "close_history": [22.1, 22.4, 22.0] }
+    ],
+    "portfolio": []
+  },
+  "legacy_decision": {
+    "orders": [
+      { "symbol": "GLD", "action": "buy", "target_weight": 0.5 },
+      { "symbol": "SLV", "action": "close", "target_weight": 0.0 }
+    ]
+  }
+}

@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  rust:
+    name: fmt · clippy · test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install Rust (pinned via rust-toolchain.toml)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy (deny warnings)
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      - name: Test
+        run: cargo test --workspace
+      - name: WASM target builds
+        run: cargo build -p openoutcry-wasm --target wasm32-unknown-unknown --release
+
+  supply-chain:
+    name: cargo-deny (licenses · advisories · bans · sources)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+
+  npm:
+    name: npm (wasm wrapper)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: install · build · test (against the committed wasm pkg)
+        working-directory: npm/openoutcry
+        run: |
+          npm ci
+          npm run build
+          npm test
+
+  python:
+    name: pyo3 + gymnasium (maturin)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: maturin develop + pytest
+        working-directory: crates/openoutcry-py
+        run: |
+          python -m pip install --upgrade pip maturin pytest numpy gymnasium
+          maturin develop
+          python -m pytest -q

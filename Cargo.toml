@@ -1,0 +1,27 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/openoutcry",
+    "crates/openoutcry-wasm",
+]
+# pyo3 extension-module crate: it needs a Python interpreter at build time and is
+# built by maturin, not `cargo --workspace`. Excluded so the Rust-only CI stays green.
+exclude = ["crates/openoutcry-py"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/general-liquidity/openoutcry"
+authors = ["General Liquidity, Inc."]
+
+# Lints enforced by the manifest (not just CI's `-D warnings`), so a plain
+# `cargo clippy` fails the same way CI does. Crates opt in via `[lints] workspace = true`.
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+todo = "deny"
+dbg_macro = "deny"
+
+[profile.release]
+lto = true
+codegen-units = 1

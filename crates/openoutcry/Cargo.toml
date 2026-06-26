@@ -1,0 +1,20 @@
+[package]
+name = "openoutcry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "OpenOutcry — leak-free point-in-time trading-agent environment (a Gym for trading agents)."
+repository.workspace = true
+keywords = ["trading", "agent", "environment", "backtest", "simulation"]
+categories = ["science", "finance", "simulation"]
+
+[dependencies]
+sharpebench-sim = "0.0.7"
+sharpebench-protocol = "0.0.7"
+sharpebench-core = "0.0.7"
+
+[dev-dependencies]
+serde_json = "1"
+
+[lints]
+workspace = true

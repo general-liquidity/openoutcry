@@ -1,0 +1,17 @@
+{
+  "name": "openoutcry-wasm",
+  "description": "WASM bindings for the OpenOutcry trading-agent environment (run baselines + recompute-to-verify via the identical engine).",
+  "version": "0.0.6",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/general-liquidity/sharpebench"
+  },
+  "files": [
+    "openoutcry_bg.wasm",
+    "openoutcry.js",
+    "openoutcry.d.ts"
+  ],
+  "main": "openoutcry.js",
+  "types": "openoutcry.d.ts"
+}

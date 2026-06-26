@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openoutcry.dev/contract/v1/decision.schema.json",
+  "title": "Decision",
+  "description": "What an agent returns at one decision step: per-instrument orders plus an optional free-text rationale. OpenOutcry Agent Interface v1.0.",
+  "type": "object",
+  "required": ["orders"],
+  "additionalProperties": false,
+  "properties": {
+    "orders": {
+      "type": "array",
+      "description": "Per-instrument instructions. May be empty (a hold).",
+      "items": { "$ref": "#/$defs/Order" }
+    },
+    "reasoning": {
+      "type": "string",
+      "description": "Free-text rationale captured into the trajectory. Optional; defaults to empty."
+    }
+  },
+  "$defs": {
+    "Order": {
+      "type": "object",
+      "required": ["symbol", "action", "target_weight"],
+      "additionalProperties": false,
+      "properties": {
+        "symbol": { "type": "string" },
+        "action": {
+          "description": "Discrete action label (sizing is carried by target_weight).",
+          "enum": ["buy", "sell", "hold", "close"]
+        },
+        "target_weight": {
+          "type": "number",
+          "description": "Target portfolio weight for this symbol, signed for shorts."
+        },
+        "confidence": {
+          "type": "number",
+          "description": "Stated conviction in [0, 1], scored for calibration. Optional; defaults to 0.5."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Optional one-line rationale for this order. Defaults to empty."
+        }
+      }
+    }
+  }
+}
