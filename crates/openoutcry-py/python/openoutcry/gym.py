@@ -251,6 +251,16 @@ class OpenOutcryEnv(gym.Env):
         terminated = float(info.get("nav", 1.0)) <= 0.0
         return obs, float(reward), terminated, truncated, info
 
+    def clone_state(self) -> str:
+        """An O(1) native snapshot of the sim state (cursor + book) as a JSON string.
+        Pair with :meth:`restore_state` for what-if branching without replaying decisions
+        (the engine-level checkpoint, vs the replay path in ``CheckpointableEnv``)."""
+        return self._env.clone_state()
+
+    def restore_state(self, state_json: str) -> None:
+        """Restore the env to a :meth:`clone_state` snapshot in O(1) (no replay)."""
+        self._env.restore_state(state_json)
+
     def render(self):  # pragma: no cover - no visual rendering
         return None
 

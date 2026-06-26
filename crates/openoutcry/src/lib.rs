@@ -92,6 +92,8 @@ pub use sharpebench_sim::{
     TeamAgent,
     TradingEnv,
     Window,
+    // O(1) env state snapshot (clone_state / restore_state) — sharpebench-sim 0.0.8.
+    EnvState,
 };
 
 // --- The language-agnostic wire contract (the standard OpenOutcry governs) -----------------

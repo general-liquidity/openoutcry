@@ -91,6 +91,7 @@ fn build_costs(
         impact_bps: impact_bps.unwrap_or(d.impact_bps),
         financing_bps: financing_bps.unwrap_or(d.financing_bps),
         max_participation: max_participation.unwrap_or(d.max_participation),
+        trf_cost: d.trf_cost,
     }
 }
 
@@ -233,6 +234,21 @@ impl PyTradingEnv {
             "events": res.info.events,
         });
         Ok((observation, res.reward, res.done, info.to_string()))
+    }
+
+    /// An O(1) snapshot of the mutable sim state (cursor + book) as JSON — the native
+    /// checkpoint that replaces replay-from-decisions. Pair with [`restore_state`].
+    fn clone_state(&self) -> PyResult<String> {
+        let state = self.inner.clone_state();
+        serde_json::to_string(&state).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
+
+    /// Restore the env to a snapshot produced by [`clone_state`] in O(1) (no replay).
+    fn restore_state(&mut self, state_json: &str) -> PyResult<()> {
+        let state: openoutcry::EnvState = serde_json::from_str(state_json)
+            .map_err(|e| PyValueError::new_err(format!("invalid env state: {e}")))?;
+        self.inner.restore_state(state);
+        Ok(())
     }
 }
 

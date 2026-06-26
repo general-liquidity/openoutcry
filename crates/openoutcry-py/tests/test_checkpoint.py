@@ -183,3 +183,35 @@ def test_state_carries_no_env_handle():
             callable(getattr(value, "reset", None))
             and callable(getattr(value, "step", None))
         ), "checkpoint params must not embed a live env/dataset handle"
+
+
+def test_native_o1_checkpoint_matches_replay():
+    """The native O(1) snapshot (native=True) restores byte-identically and agrees with
+    the replay path."""
+    import numpy as np
+    from openoutcry import OpenOutcryEnv, CheckpointableEnv
+
+    def _act(env):
+        n = env.action_space.shape[0]
+        return np.full((n,), 0.2, dtype=np.float32)
+
+    env = CheckpointableEnv(OpenOutcryEnv(n_symbols=3, n_days=60, seed=9))
+    env.reset(seed=9)
+    a = _act(env)
+    for _ in range(8):
+        env.step(a)
+    snap_native = env.clone_state(native=True)
+    snap_replay = env.clone_state(native=False)
+    # advance, then restore via the native O(1) path
+    after = [tuple(env.step(a)[0]["closes"]) for _ in range(4)]
+    env.restore_state(snap_native)
+    native_after = [tuple(env.step(a)[0]["closes"]) for _ in range(4)]
+    # and via replay, on an independent branch
+    branch = env.branch(snap_replay)
+    replay_after = [tuple(branch.step(a)[0]["closes"]) for _ in range(4)]
+    assert native_after == after
+    assert native_after == replay_after
+    # the native snapshot round-trips through to_dict/from_dict
+    from openoutcry import CheckpointState
+    rt = CheckpointState.from_dict(snap_native.to_dict())
+    assert rt.native_state == snap_native.native_state

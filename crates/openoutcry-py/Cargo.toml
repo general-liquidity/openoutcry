@@ -15,7 +15,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 openoutcry = { path = "../openoutcry", version = "0.5.0" }
-sharpebench-core = "0.0.7"
+sharpebench-core = "0.0.8"
 serde_json = "1"
 
 [dependencies.pyo3]

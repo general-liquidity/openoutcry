@@ -15,11 +15,14 @@ to the snapshot point — same next observations, same next rewards. ``branch`` 
 into an *independent* env, which is what tree search / MCTS / counterfactual rollouts need:
 explore a subtree without perturbing the parent.
 
-Cost model (be honest): ``restore_state`` / ``branch`` are **O(prefix length)** — they
-replay every action up to the snapshot. For deep trees this is quadratic in the worst case.
-An O(1) engine-level snapshot (copy the native simulator state) is a future
-``sharpebench-sim`` enhancement; until then, replay is the leak-free, engine-agnostic way to
-get exact restoration.
+Two restoration paths:
+
+- **Replay (default):** ``restore_state`` / ``branch`` are O(prefix length) — they replay
+  every action up to the snapshot. Engine-agnostic and leak-free by construction.
+- **Native O(1) (opt-in, ``native=True``):** since ``sharpebench-sim 0.0.8`` the engine
+  exposes ``clone_state`` / ``restore_state``, so a snapshot is a direct copy of the native
+  simulator state (cursor + book). ``clone_state(native=True)`` captures that and
+  ``restore_state`` rewinds in O(1) with no replay — the fast path for deep tree search.
 
 Leak-safety: the state carries only construction params + decisions — **never** the
 underlying ``Dataset`` / native ``TradingEnv`` handle or a raw price series. Those would let
@@ -118,6 +121,7 @@ class CheckpointState:
     actions: list = field(default_factory=list)
     step: int = 0
     include_rng: bool = True
+    native_state: Any = None  # the native O(1) snapshot JSON (set when native=True)
 
     def to_dict(self) -> dict:
         return {
@@ -125,6 +129,7 @@ class CheckpointState:
             "actions": [list(a) for a in self.actions],
             "step": int(self.step),
             "include_rng": bool(self.include_rng),
+            "native_state": self.native_state,
         }
 
     @classmethod
@@ -134,6 +139,7 @@ class CheckpointState:
             actions=[list(a) for a in d.get("actions", [])],
             step=int(d.get("step", 0)),
             include_rng=bool(d.get("include_rng", True)),
+            native_state=d.get("native_state"),
         )
 
 
@@ -170,28 +176,36 @@ class CheckpointableEnv(gym.Wrapper):
 
     # -- checkpoint API ----------------------------------------------------
 
-    def clone_state(self, *, include_rng: bool = True) -> CheckpointState:
+    def clone_state(self, *, include_rng: bool = True, native: bool = False) -> CheckpointState:
         """Capture the current env state as a serializable :class:`CheckpointState`.
 
-        O(prefix length) in space (the action list). See :meth:`restore_state` for the
-        replay cost. ``include_rng`` is documented on :class:`CheckpointState`.
+        With ``native=False`` (default) the snapshot is the recorded action prefix
+        (O(prefix length); engine-agnostic). With ``native=True`` it is the engine's O(1)
+        ``clone_state`` snapshot (cursor + book) — the fast path for deep tree search.
+        ``include_rng`` is documented on :class:`CheckpointState`.
         """
         return CheckpointState(
             params=_extract_params(self.env),
             actions=[a.tolist() for a in self._actions],
             step=self._step,
             include_rng=include_rng,
+            native_state=self.env.clone_state() if native else None,
         )
 
     def restore_state(self, state: CheckpointState) -> None:
-        """Rewind THIS env to ``state`` by rebuilding from params and replaying actions.
-
-        Builds a brand-new native env from ``state.params`` (so no stale simulator state
-        survives), ``reset``s it, and replays every recorded action. **O(prefix length)** —
-        it re-executes the whole decision prefix. Exact because the engine is deterministic.
+        """Rewind THIS env to ``state``. If ``state`` carries a ``native_state`` snapshot,
+        rebuild the env and restore the engine in O(1); otherwise rebuild and replay the
+        recorded action prefix (O(prefix length)). Both are exact (the engine is
+        deterministic), so the restored env reproduces the snapshot point byte-for-byte.
         """
         self.env = _build_env(state.params)
-        self._replay(state)
+        if state.native_state is not None:
+            self.env.reset()
+            self.env.restore_state(state.native_state)
+            self._actions = []
+            self._step = int(state.step)
+        else:
+            self._replay(state)
 
     def branch(self, state: CheckpointState) -> "CheckpointableEnv":
         """Return a NEW, independent :class:`CheckpointableEnv` restored to ``state``.
@@ -202,7 +216,12 @@ class CheckpointableEnv(gym.Wrapper):
         O(prefix length) to materialize.
         """
         fork = CheckpointableEnv(_build_env(state.params))
-        fork._replay(state)
+        if state.native_state is not None:
+            fork.env.reset()
+            fork.env.restore_state(state.native_state)
+            fork._step = int(state.step)
+        else:
+            fork._replay(state)
         return fork
 
     # -- internal ----------------------------------------------------------
