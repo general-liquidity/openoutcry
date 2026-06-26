@@ -36,7 +36,7 @@ The strategic bet is **interface ownership**: if every trading agent in the open
 
 ## Status: published, active (pre-1.0)
 
-Published to **crates.io**, **npm**, and **PyPI** at **v0.1.0**, depending on the **published** `sharpebench-sim 0.0.7` engine (not a vendored copy). CI is green across four surfaces: Rust (`fmt`, `clippy -D warnings`, tests, a WASM target build), `cargo-deny`, the npm package, and the Python wheel (`maturin` + `pytest`).
+Published to **crates.io**, **npm**, and **PyPI** at **v0.4.0**, depending on the **published** `sharpebench-sim 0.0.7` engine (not a vendored copy). CI is green across four surfaces: Rust (`fmt`, `clippy -D warnings`, tests, a WASM target build), `cargo-deny`, the npm package, and the Python wheel (`maturin` + `pytest`).
 
 Beyond the core `reset`/`step` lifecycle, the environment now ships a full **reinforcement-learning training surface**:
 
@@ -45,7 +45,12 @@ Beyond the core `reset`/`step` lifecycle, the environment now ships a full **rei
 | **Procedural scenarios** | A seeded generator (`ScenarioSpec` / `generate_scenario`) using Procgen's integer-seed-interval model, with `Calm` / `Hard` / `Extreme` volatility-and-jump tiers and provably disjoint `train_test_split`, cross-runtime golden-hashed for byte-identical generation. |
 | **Generalization gap** | `generalization_gap` measures train-vs-held-out deflated Sharpe over disjoint seed bands, turning "did it overfit" into one number scored by the SharpeBench kernel. |
 | **`verifiers` training env** | A PrimeIntellect `verifiers` `MultiTurnEnv` that steps the market bar-by-bar, over a multi-row scenario `Dataset`, with an `XMLParser` decision protocol and a GRPO-safe bounded reward scored by the real SharpeBench `score_run` (deflated Sharpe, pass^k, process checks). |
-| **Vectorized rollouts** | `VecTradingEnv` runs B scenario lanes in lockstep (rayon, structure-of-arrays JSON, current-Gymnasium `AutoresetMode`), exposed as a `gymnasium.vector` env. |
+| **Pluggable reward schemes** | `load_environment(reward_scheme=...)` selects from a registry: an online differential Sharpe (Moody-Saffell, aligns the training signal with the deflated-Sharpe score), Sortino, drawdown-penalized, turnover-penalized, loss-averse. Schemes shape *training only*; the rank key stays the SharpeBench kernel. |
+| **More env tasks** | Beyond the position env: a `PortfolioEnv` (simplex allocation, log-return), an `ExecutionEnv` (VWAP/TWAP implementation-shortfall MDP), and a `MarketMakingEnv` (Avellaneda-Stoikov) that ships its **closed-form analytical-optimal policy** as a baseline, so agents are scored on regret-vs-provably-optimal. |
+| **Scenario families** | Calm/Hard/Extreme vol-jump tiers plus `CointegratedPairs` (genuine mean-reverting spread), `RegimeShift` (trend-to-whipsaw), curriculum chaining (`CurriculumEnv`/`regime_curriculum`), and a frozen named held-out eval-seed regression set. |
+| **Rich observations** | Opt-in, causal, leak-free obs augmentations computed from the point-in-time history: technical indicators (RSI/MACD/Bollinger/...), multi-timescale momentum, rolling covariance, a spread z-score, a synthetic seed-derived news/sentiment channel, and time-to-horizon. Declarative via `PreprocessingConfig`. |
+| **Risk + eval axes** | Drawdown stop-out, turbulence-halt, and liquidation-cascade wrappers; a forecast-quality calibrated eval axis (FinPILOT), per-regime breakdown, efficient-frontier/Kelly baselines, and a full risk/profit metrics panel (Calmar/Sortino/VaR/CVaR/tail/turnover). |
+| **Vectorized rollouts** | `VecTradingEnv` runs B scenario lanes in lockstep (rayon, structure-of-arrays JSON, current-Gymnasium `AutoresetMode`, async `send`/`recv`), exposed as a `gymnasium.vector` env. |
 | **Point-in-time-safe wrappers** | Causal normalize (no future-bar leak), `TimeLimit`, `FrameStack`, `RecordEpisodeStatistics`, vector-env variants, and `flatten`/`unflatten` Dict-obs helpers, plus a `check_env` conformance harness that *proves* seed-determinism (and adopts Gymnasium's own `check_env`). |
 | **Gymnasium registration** | Versioned, namespaced IDs: `gymnasium.make("OpenOutcry/Hard-v1")` and `make_vec(...)` route to the scalar and vector envs, with `-Eval-v1` variants on a disjoint held-out seed band. |
 | **Multi-agent markets** | A PettingZoo `MultiAgentOpenOutcryEnv` (batched competition: N agents on one frozen scenario, SharpeBench-ranked), and `EndogenousMarketEnv`, a real shared-book market where aggregate flow *moves* the cleared price (Kyle permanent + Almgren-Chriss temporary impact). |
