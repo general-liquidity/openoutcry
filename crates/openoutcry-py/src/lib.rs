@@ -735,6 +735,28 @@ impl PyOrderBook {
     fn ladder(&self) -> String {
         ladder_json(&self.inner, self.levels).to_string()
     }
+
+    /// Single-price call-auction uncross over the current book (read-only): the batch
+    /// open/close clearing the continuous book lacks. Returns
+    /// `{ "clearing_tick": i64, "matched_qty": u64 }` at the volume-maximizing price, or
+    /// `null` when nothing crosses. Does not mutate the book or the fill tape.
+    fn uncross(&self) -> String {
+        match self.inner.uncross() {
+            Some((clearing_tick, matched_qty)) => {
+                serde_json::json!({ "clearing_tick": clearing_tick, "matched_qty": matched_qty })
+                    .to_string()
+            }
+            None => "null".to_string(),
+        }
+    }
+
+    /// Read-only walk-the-book cost of filling `qty` on `side` (`"buy"` sweeps asks, `"sell"`
+    /// sweeps bids) against current depth. Returns the `SweepCost` as JSON
+    /// (`{ "avg_px_tick", "slippage_ticks", "filled_qty" }`) without mutating the book.
+    fn sweep_cost(&self, side: &str, qty: u64) -> PyResult<String> {
+        let cost = self.inner.sweep_cost(parse_side(side)?, qty);
+        serde_json::to_string(&cost).map_err(|e| PyValueError::new_err(e.to_string()))
+    }
 }
 
 /// The `openoutcry_py` native module (imported as `openoutcry.openoutcry_py`).

@@ -62,6 +62,52 @@ def test_orderbook_rejects_bad_order():
         b.step_book(json.dumps([{"agent": 0, "kind": "limit", "side": "buy"}]))  # missing price/qty
 
 
+def test_orderbook_sweep_cost_is_read_only():
+    b = _book()
+    b.reset_book()
+    b.step_book(
+        json.dumps(
+            [
+                {"agent": 0, "kind": "limit", "side": "sell", "price_tick": 100, "qty": 2},
+                {"agent": 1, "kind": "limit", "side": "sell", "price_tick": 101, "qty": 2},
+                {"agent": 2, "kind": "limit", "side": "sell", "price_tick": 102, "qty": 2},
+            ]
+        )
+    )
+    before = json.loads(b.ladder())
+    c = json.loads(b.sweep_cost("buy", 5))
+    assert c["filled_qty"] == 5
+    assert c["avg_px_tick"] == 504.0 / 5.0  # (2*100 + 2*101 + 1*102) / 5
+    assert c["slippage_ticks"] == abs(504.0 / 5.0 - 100.0)
+    # Read-only: the book is byte-identical after the query.
+    assert json.loads(b.ladder()) == before
+
+
+def test_orderbook_sweep_cost_partial_and_empty():
+    b = _book()
+    b.reset_book()
+    b.step_book(json.dumps([{"agent": 0, "kind": "limit", "side": "sell", "price_tick": 101, "qty": 6}]))
+    c = json.loads(b.sweep_cost("buy", 100))
+    assert c["filled_qty"] == 6 and c["avg_px_tick"] == 101.0 and c["slippage_ticks"] == 0.0
+    b.reset_book()
+    empty = json.loads(b.sweep_cost("buy", 10))
+    assert empty["filled_qty"] == 0 and empty["avg_px_tick"] == 0.0
+
+
+def test_orderbook_uncross_none_on_uncrossed_book():
+    b = _book()
+    b.reset_book()
+    b.step_book(
+        json.dumps(
+            [
+                {"agent": 0, "kind": "limit", "side": "buy", "price_tick": 99, "qty": 10},
+                {"agent": 1, "kind": "limit", "side": "sell", "price_tick": 101, "qty": 10},
+            ]
+        )
+    )
+    assert json.loads(b.uncross()) is None
+
+
 pettingzoo = pytest.importorskip("pettingzoo")
 
 
