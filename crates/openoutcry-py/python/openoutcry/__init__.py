@@ -70,7 +70,7 @@ from .failure_taxonomy import (
 )
 from .news import SyntheticNewsObservation, news_series
 from .discrete import DiscreteAction
-from .pairs import SpreadObservation
+from .pairs import SpreadObservation, KalmanSpreadObservation
 from .regime_eval import evaluate_per_regime, radar_score
 from .portfolio_env import PortfolioEnv
 from .market_making import (
@@ -226,6 +226,7 @@ __all__ = [
     "news_series",
     "DiscreteAction",
     "SpreadObservation",
+    "KalmanSpreadObservation",
     "MinVariancePolicy",
     "MaxSharpePolicy",
     "KellyVolTargetPolicy",
